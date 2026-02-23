@@ -5,6 +5,7 @@ from datetime import date
 RPH_TARGET = 300
 RPH_MAX_GREEN = 600
 REVMIX_TARGET = 0.60
+MAX_ITEMS = 3
 
 st.set_page_config(layout="wide")
 
@@ -15,13 +16,17 @@ if "sales" not in st.session_state:
     st.session_state.sales = []
     st.session_state.current_date = str(date.today())
 
+if "item_count" not in st.session_state:
+    st.session_state.item_count = 1
+
 # Auto daily reset
 if st.session_state.current_date != str(date.today()):
     st.session_state.sales = []
     st.session_state.current_date = str(date.today())
+    st.session_state.item_count = 1
 
-# Initialize basket inputs in session state (so we can clear them)
-for idx in (1, 2, 3):
+# Initialize item inputs so we can clear them reliably
+for idx in range(1, MAX_ITEMS + 1):
     st.session_state.setdefault(f"rev_{idx}", 0.0)
     st.session_state.setdefault(f"tags_{idx}", [])
 
@@ -39,63 +44,83 @@ def get_rph_color(rph: float) -> str:
         return f"rgb({red_value},0,0)"
 
 # -----------------------------
-# Title
+# Helpers
 # -----------------------------
-st.title("E-Transport Sales Tracker")
-
-# -----------------------------
-# Add Sale Section (3 line-items)
-# -----------------------------
-st.header("Add Sale (Basket)")
-
 def sale_row(row_num: int):
     c1, c2 = st.columns([2, 3])
     with c1:
         st.number_input(
-            f"Item {row_num} Revenue ($)",
+            f"Revenue ($) — Item {row_num}",
             min_value=0.0,
             step=1.0,
             key=f"rev_{row_num}",
         )
     with c2:
         st.multiselect(
-            f"Item {row_num} Category Tags",
+            f"Category Tags — Item {row_num}",
             ["Health/Wearables", "CarFi", "Other"],
-            default=st.session_state.get(f"tags_{row_num}", []),
             key=f"tags_{row_num}",
         )
 
-sale_row(1)
-sale_row(2)
-sale_row(3)
+def clear_inputs():
+    for i in range(1, MAX_ITEMS + 1):
+        st.session_state[f"rev_{i}"] = 0.0
+        st.session_state[f"tags_{i}"] = []
+    st.session_state.item_count = 1
 
 def add_basket():
     added = 0
-    for i in (1, 2, 3):
+    for i in range(1, st.session_state.item_count + 1):
         revenue = float(st.session_state.get(f"rev_{i}", 0.0) or 0.0)
         tags = st.session_state.get(f"tags_{i}", []) or []
-
-        # Only add if revenue is > 0
         if revenue > 0:
-            st.session_state.sales.append(
-                {"revenue": revenue, "categories": tags}
-            )
+            st.session_state.sales.append({"revenue": revenue, "categories": tags})
             added += 1
-
-    # Clear inputs after adding
-    for i in (1, 2, 3):
-        st.session_state[f"rev_{i}"] = 0.0
-        st.session_state[f"tags_{i}"] = []
-
     return added
 
-if st.button("Add Basket (Up to 3 Items)"):
-    count = add_basket()
-    if count > 0:
-        st.success(f"Added {count} item(s).")
+# -----------------------------
+# UI
+# -----------------------------
+st.title("E-Transport Sales Tracker")
+
+# -----------------------------
+# Add Sale (progressive items)
+# -----------------------------
+st.header("Add Sale")
+
+# Controls row: + and - buttons
+ctrl1, ctrl2, ctrl3 = st.columns([1, 1, 6])
+with ctrl1:
+    if st.button("➕", help="Add another item (max 3)") and st.session_state.item_count < MAX_ITEMS:
+        st.session_state.item_count += 1
         st.rerun()
-    else:
-        st.warning("Nothing added. Enter at least one item revenue > $0.")
+with ctrl2:
+    if st.button("➖", help="Remove last item") and st.session_state.item_count > 1:
+        # clear last row inputs when removing it
+        last = st.session_state.item_count
+        st.session_state[f"rev_{last}"] = 0.0
+        st.session_state[f"tags_{last}"] = []
+        st.session_state.item_count -= 1
+        st.rerun()
+
+# Render only the number of rows needed
+for row in range(1, st.session_state.item_count + 1):
+    sale_row(row)
+
+btn1, btn2 = st.columns([2, 2])
+with btn1:
+    if st.button("Add Sale"):
+        count = add_basket()
+        if count > 0:
+            st.success(f"Added {count} item(s).")
+            clear_inputs()
+            st.rerun()
+        else:
+            st.warning("Nothing added. Enter revenue > $0 for at least one item.")
+with btn2:
+    if st.button("Clear"):
+        clear_inputs()
+        st.rerun()
 
 # -----------------------------
 # Metrics Section
@@ -174,7 +199,7 @@ else:
     st.success("Revmix Target Hit ✅")
 
 # -----------------------------
-# Sales History Section
+# Sales History
 # -----------------------------
 st.header("Sales History")
 
