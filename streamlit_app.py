@@ -10,31 +10,49 @@ MAX_ITEMS = 10
 st.set_page_config(layout="wide")
 
 # -----------------------------
-# Styling: small grey icon buttons (secondary buttons)
+# Styling: tiny grey icon buttons, no outline/box
 # -----------------------------
 st.markdown(
     """
     <style>
-    /* Make SECONDARY buttons look like small grey icons (no outline/boxy look) */
+    /* Secondary buttons (we use these for the X and +) — remove boxed look entirely */
     div[data-testid="stBaseButton-secondary"] > button {
         background: transparent !important;
-        border: none !important;
+        border: 0 !important;
+        outline: 0 !important;
         box-shadow: none !important;
-        padding: 2px 6px !important;
-        min-height: 24px !important;
-        height: 24px !important;
-        line-height: 1 !important;
+        padding: 0px 4px !important;
+        min-height: 18px !important;
+        height: 18px !important;
+        line-height: 18px !important;
         color: #9aa0a6 !important; /* grey */
-        font-size: 16px !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+        width: auto !important;
     }
     div[data-testid="stBaseButton-secondary"] > button:hover {
-        background: rgba(0,0,0,0.05) !important;
-        border: none !important;
-    }
-    div[data-testid="stBaseButton-secondary"] > button:focus {
-        outline: none !important;
+        background: rgba(0,0,0,0.04) !important;
+        border: 0 !important;
+        outline: 0 !important;
         box-shadow: none !important;
     }
+    div[data-testid="stBaseButton-secondary"] > button:active {
+        background: rgba(0,0,0,0.06) !important;
+        border: 0 !important;
+        outline: 0 !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+    div[data-testid="stBaseButton-secondary"] > button:focus,
+    div[data-testid="stBaseButton-secondary"] > button:focus-visible {
+        border: 0 !important;
+        outline: 0 !important;
+        box-shadow: none !important;
+    }
+
+    /* Tighten vertical spacing between rows a bit */
+    div.block-container { padding-top: 2rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -78,10 +96,6 @@ def get_rph_color(rph: float) -> str:
         return f"rgb({red_value},0,0)"
 
 def parse_money(s: str) -> float:
-    """
-    Accepts: '', '750', '750.50', '$750', '750,50' (won't parse comma decimals well),
-    and returns float or 0.0.
-    """
     if s is None:
         return 0.0
     s = str(s).strip()
@@ -122,12 +136,10 @@ def add_sale_cb():
         tag = st.session_state.get(f"tag_{i}", "Other")
 
         if revenue > 0:
-            st.session_state.sales.append(
-                {"revenue": revenue, "desc": desc, "tag": tag}
-            )
+            st.session_state.sales.append({"revenue": revenue, "desc": desc, "tag": tag})
             added += 1
 
-    # Clear inputs safely (callback context)
+    # Clear inputs safely in callback
     for i in range(1, MAX_ITEMS + 1):
         st.session_state[f"rev_{i}"] = ""
         st.session_state[f"desc_{i}"] = ""
@@ -142,11 +154,10 @@ def add_sale_cb():
 st.title("E-Transport Sales Tracker")
 
 # -----------------------------
-# Add Sale (compact progressive list)
+# Add Sale
 # -----------------------------
 st.header("Add Sale")
 
-# Feedback from last add
 if "_last_added" in st.session_state:
     if st.session_state._last_added > 0:
         st.success(f"Added {st.session_state._last_added} item(s).")
@@ -154,16 +165,17 @@ if "_last_added" in st.session_state:
         st.warning("Nothing added. Enter revenue > $0 for at least one item.")
     del st.session_state._last_added
 
-# Layout widths: [X] [Revenue] [Description] [Tag]
-X_COL = 0.45
-REV_COL = 1.15
-DESC_COL = 2.60
-TAG_COL = 1.35
+# Layout widths: make X tiny and CLOSE to revenue
+# [X][Revenue][Description][Tag]
+X_COL = 0.18     # smaller -> closer
+REV_COL = 1.10
+DESC_COL = 2.75
+TAG_COL = 1.25
 
 for i in range(1, st.session_state.item_count + 1):
     c_x, c_rev, c_desc, c_tag = st.columns(
         [X_COL, REV_COL, DESC_COL, TAG_COL],
-        vertical_alignment="center"
+        vertical_alignment="center",
     )
 
     with c_x:
@@ -184,7 +196,7 @@ for i in range(1, st.session_state.item_count + 1):
             "Revenue",
             key=f"rev_{i}",
             label_visibility="collapsed",
-            placeholder="Revenue",
+            placeholder="Revenue",   # placeholder disappears when you type
         )
 
     with c_desc:
@@ -192,7 +204,7 @@ for i in range(1, st.session_state.item_count + 1):
             "What did you sell?",
             key=f"desc_{i}",
             label_visibility="collapsed",
-            placeholder="Item (ex: Apple Watch SE 2, Oura Ring, Car speakers + install)",
+            placeholder="Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)",  # updated
         )
 
     with c_tag:
@@ -204,11 +216,8 @@ for i in range(1, st.session_state.item_count + 1):
             label_visibility="collapsed",
         )
 
-# Plus row: place under Revenue column
-c_x2, c_rev2, c_desc2, c_tag2 = st.columns(
-    [X_COL, REV_COL, DESC_COL, TAG_COL],
-    vertical_alignment="center"
-)
+# Add-line button row: place under Revenue column
+c_x2, c_rev2, c_desc2, c_tag2 = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
 with c_rev2:
     st.button(
         "＋ Add line",
@@ -219,7 +228,6 @@ with c_rev2:
         type="secondary",
     )
 
-# Main submit button
 st.button("Add Sale", key="add_sale_btn", on_click=add_sale_cb, type="primary")
 
 # -----------------------------
@@ -232,17 +240,14 @@ hours_worked = st.number_input(
     min_value=1.0,
     max_value=16.0,
     value=8.0,
-    step=0.5
+    step=0.5,
 )
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
-
 category_revenue = sum(
-    s["revenue"]
-    for s in st.session_state.sales
+    s["revenue"] for s in st.session_state.sales
     if s.get("tag") in ["Health/Wearables", "CarFi"]
 )
-
 other_revenue = total_revenue - category_revenue
 
 rph = total_revenue / hours_worked if hours_worked else 0
@@ -257,7 +262,7 @@ st.markdown(
     <h2>Category Revenue: ${category_revenue:,.2f}</h2>
     <h2>Revmix: {revmix*100:.2f}%</h2>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # -----------------------------
@@ -270,7 +275,7 @@ if total_revenue > 0:
     plt.pie(
         [category_revenue, other_revenue],
         labels=["Category", "Other"],
-        autopct="%1.1f%%"
+        autopct="%1.1f%%",
     )
     plt.title("Category vs Other Revenue")
     st.pyplot(fig)
