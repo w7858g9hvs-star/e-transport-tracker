@@ -25,7 +25,7 @@ if st.session_state.current_date != str(date.today()):
     st.session_state.current_date = str(date.today())
     st.session_state.item_count = 1
 
-# Initialize item inputs so we can clear them reliably
+# Initialize item inputs
 for idx in range(1, MAX_ITEMS + 1):
     st.session_state.setdefault(f"rev_{idx}", 0.0)
     st.session_state.setdefault(f"tags_{idx}", [])
@@ -46,29 +46,7 @@ def get_rph_color(rph: float) -> str:
 # -----------------------------
 # Helpers
 # -----------------------------
-def sale_row(row_num: int):
-    c1, c2 = st.columns([2, 3])
-    with c1:
-        st.number_input(
-            "Revenue ($)",
-            min_value=0.0,
-            step=1.0,
-            key=f"rev_{row_num}",
-        )
-    with c2:
-        st.multiselect(
-            "Category Tags",
-            ["Health/Wearables", "CarFi", "Other"],
-            key=f"tags_{row_num}",
-        )
-
-def clear_inputs():
-    for i in range(1, MAX_ITEMS + 1):
-        st.session_state[f"rev_{i}"] = 0.0
-        st.session_state[f"tags_{i}"] = []
-    st.session_state.item_count = 1
-
-def add_basket():
+def add_sale_items():
     added = 0
     for i in range(1, st.session_state.item_count + 1):
         revenue = float(st.session_state.get(f"rev_{i}", 0.0) or 0.0)
@@ -78,67 +56,95 @@ def add_basket():
             added += 1
     return added
 
+def clear_item_inputs():
+    for i in range(1, MAX_ITEMS + 1):
+        st.session_state[f"rev_{i}"] = 0.0
+        st.session_state[f"tags_{i}"] = []
+    st.session_state.item_count = 1
+
+def remove_line(line_index: int):
+    """
+    Remove a line item 1..item_count by shifting later lines up.
+    """
+    if st.session_state.item_count <= 1:
+        return
+
+    # Shift values up from line_index -> item_count-1
+    for j in range(line_index, st.session_state.item_count):
+        st.session_state[f"rev_{j}"] = float(st.session_state.get(f"rev_{j+1}", 0.0) or 0.0)
+        st.session_state[f"tags_{j}"] = list(st.session_state.get(f"tags_{j+1}", []) or [])
+
+    # Clear last line
+    last = st.session_state.item_count
+    st.session_state[f"rev_{last}"] = 0.0
+    st.session_state[f"tags_{last}"] = []
+    st.session_state.item_count -= 1
+
 # -----------------------------
-# Title
+# UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
 
 # -----------------------------
-# Add Sale (progressive items + small plus under item 1)
+# Add Sale (compact, progressive)
 # -----------------------------
 st.header("Add Sale")
 
-# CSS to make the plus button smaller (targets this button via key-based CSS selector)
-st.markdown(
-    """
-    <style>
-    /* Make ONLY the plus button smaller */
-    div[data-testid="stButton"] button[kind="secondary"]{
-        font-size: 14px !important;
-        padding: 2px 10px !important;
-        height: 30px !important;
-        width: 46px !important;
-        line-height: 1 !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# Use a form so the layout stays tight and inputs feel like a single “basket”
+with st.form("add_sale_form", clear_on_submit=False):
 
-# Item 1
-sale_row(1)
+    # Render line items compactly
+    for i in range(1, st.session_state.item_count + 1):
+        # Revenue | Tags | Remove (for lines > 1)
+        c1, c2, c3 = st.columns([1.2, 3.2, 0.35], vertical_alignment="center")
 
-# Small plus button under item 1
-col_plus, _ = st.columns([1, 7])
-with col_plus:
-    if st.button("＋", key="plus_btn", help="Add another item (max 3)"):
-        if st.session_state.item_count < MAX_ITEMS:
-            st.session_state.item_count += 1
+        with c1:
+            st.number_input(
+                "Revenue ($)",
+                min_value=0.0,
+                step=1.0,
+                key=f"rev_{i}",
+                label_visibility="collapsed",
+                placeholder="Revenue",
+            )
+
+        with c2:
+            st.multiselect(
+                "Tags",
+                ["Health/Wearables", "CarFi", "Other"],
+                key=f"tags_{i}",
+                label_visibility="collapsed",
+                placeholder="Category tags",
+            )
+
+        with c3:
+            if i == 1:
+                st.write("")  # keep alignment
+            else:
+                # minus button for this line
+                if st.form_submit_button("−", help=f"Remove item {i}"):
+                    remove_line(i)
+                    st.rerun()
+
+    # Add-line button goes at the bottom under the last row
+    bottom_left, bottom_mid, bottom_right = st.columns([1.2, 3.2, 0.35], vertical_alignment="center")
+    with bottom_right:
+        if st.form_submit_button("＋", help="Add another item"):
+            if st.session_state.item_count < MAX_ITEMS:
+                st.session_state.item_count += 1
             st.rerun()
 
-# Additional items appear only if needed
-if st.session_state.item_count >= 2:
-    st.divider()
-    sale_row(2)
+    # Main submit button
+    submitted = st.form_submit_button("Add Sale")
 
-if st.session_state.item_count >= 3:
-    st.divider()
-    sale_row(3)
-
-btn1, btn2 = st.columns([2, 2])
-with btn1:
-    if st.button("Add Sale", key="add_sale_btn"):
-        count = add_basket()
+    if submitted:
+        count = add_sale_items()
         if count > 0:
             st.success(f"Added {count} item(s).")
-            clear_inputs()
+            clear_item_inputs()
             st.rerun()
         else:
             st.warning("Nothing added. Enter revenue > $0 for at least one item.")
-with btn2:
-    if st.button("Clear", key="clear_btn"):
-        clear_inputs()
-        st.rerun()
 
 # -----------------------------
 # Metrics Section
@@ -166,7 +172,9 @@ other_revenue = total_revenue - category_revenue
 rph = total_revenue / hours_worked if hours_worked else 0
 revmix = category_revenue / total_revenue if total_revenue > 0 else 0
 
+# -----------------------------
 # Display Metrics
+# -----------------------------
 color = get_rph_color(rph)
 
 st.markdown(
