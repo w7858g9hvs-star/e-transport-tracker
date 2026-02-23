@@ -271,4 +271,3 @@ if st.session_state.sales:
                 st.rerun()
 else:
     st.info("No sales recorded today.")
-    
