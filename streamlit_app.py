@@ -2,250 +2,245 @@ import streamlit as st
 import matplotlib.pyplot as plt
 from datetime import date
 
+# -----------------------------
+# Config
+# -----------------------------
 RPH_TARGET = 300
 RPH_MAX_GREEN = 600
 REVMIX_TARGET = 0.60
 MAX_ITEMS = 10
 
+TAGS = ["Health/Wearables", "CarFi", "Other"]
+DEFAULT_TAG = "Health/Wearables"
+ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
+
 st.set_page_config(layout="wide")
 
 # -----------------------------
-# CSS: secondary buttons as plain grey icons; center content
+# Discord-ish dark styling (softer text, muted UI)
 # -----------------------------
 st.markdown(
     """
     <style>
+    :root {
+      --bg: #0f111a;
+      --card: #151926;
+      --card2: #171c2b;
+      --border: rgba(255,255,255,0.08);
+      --text: #d7dbe6;
+      --muted: #9aa3b2;
+      --muted2: #7f8796;
+      --accent: #5865F2; /* discord blurple */
+    }
+
+    /* App background + base text */
+    .stApp { background: var(--bg); color: var(--text); }
+    h1,h2,h3,h4,h5,h6, p, label { color: var(--text) !important; }
+    .stCaption, small { color: var(--muted) !important; }
+
+    /* “Cards” / sections spacing */
+    div.block-container { padding-top: 1.5rem; max-width: 1100px; }
+
+    /* Inputs */
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="textarea"] > div,
+    div[data-baseweb="select"] > div {
+      background: var(--card) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      border-radius: 12px !important;
+    }
+    input, textarea { color: var(--text) !important; caret-color: var(--text) !important; }
+    input::placeholder, textarea::placeholder { color: var(--muted2) !important; }
+
+    /* Streamlit select text */
+    div[data-baseweb="select"] span { color: var(--text) !important; }
+
+    /* Remove extra label space when collapsed */
+    .stTextInput, .stSelectbox { margin-top: -6px; }
+
+    /* Secondary buttons (✕ and + Add item): small, muted, no box */
     div[data-testid="stBaseButton-secondary"] > button {
-        background: transparent !important;
-        border: none !important;
-        outline: none !important;
-        box-shadow: none !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      color: var(--muted) !important;
 
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
 
-        padding: 0px 6px !important;
-        min-height: 22px !important;
-        height: 22px !important;
-        line-height: 22px !important;
+      padding: 0px 6px !important;
+      min-height: 22px !important;
+      height: 22px !important;
+      line-height: 22px !important;
 
-        color: #9aa0a6 !important;
-        font-size: 14px !important;
-        font-weight: 700 !important;
-
-        border-radius: 8px !important;
-        width: auto !important;
+      font-size: 14px !important;
+      font-weight: 700 !important;
+      border-radius: 10px !important;
+      width: auto !important;
     }
     div[data-testid="stBaseButton-secondary"] > button:hover {
-        background: rgba(255,255,255,0.06) !important;
-        border: none !important;
-        outline: none !important;
-        box-shadow: none !important;
+      background: rgba(255,255,255,0.06) !important;
+      color: var(--text) !important;
     }
     div[data-testid="stBaseButton-secondary"] > button:focus,
     div[data-testid="stBaseButton-secondary"] > button:focus-visible {
-        outline: none !important;
-        box-shadow: none !important;
-        border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+      border: none !important;
     }
 
-    /* Slightly tighter top padding */
-    div.block-container { padding-top: 1.6rem; }
+    /* Primary button: blurple */
+    div[data-testid="stBaseButton-primary"] > button {
+      background: var(--accent) !important;
+      border: 1px solid rgba(255,255,255,0.10) !important;
+      color: #fff !important;
+      border-radius: 12px !important;
+      padding: 0.55rem 1rem !important;
+      font-weight: 700 !important;
+    }
+    div[data-testid="stBaseButton-primary"] > button:hover {
+      filter: brightness(1.05);
+    }
+
+    /* Reduce harsh divider line */
+    hr { border-color: var(--border) !important; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 # -----------------------------
-# Session init
+# Session State
 # -----------------------------
-if "sales" not in st.session_state:
-    st.session_state.sales = []
-    st.session_state.current_date = str(date.today())
+def ss_init():
+    ss = st.session_state
+    today = str(date.today())
 
-if "item_count" not in st.session_state:
-    st.session_state.item_count = 1
+    if "current_date" not in ss:
+        ss.current_date = today
+        ss.sales = []
+        ss.item_count = 1
 
-if "mobile_layout" not in st.session_state:
-    st.session_state.mobile_layout = False
+    # Daily reset
+    if ss.current_date != today:
+        ss.current_date = today
+        ss.sales = []
+        ss.item_count = 1
 
-# Auto daily reset
-if st.session_state.current_date != str(date.today()):
-    st.session_state.sales = []
-    st.session_state.current_date = str(date.today())
-    st.session_state.item_count = 1
+    # Item inputs
+    for i in range(1, MAX_ITEMS + 1):
+        ss.setdefault(f"rev_{i}", "")
+        ss.setdefault(f"desc_{i}", "")
+        ss.setdefault(f"tag_{i}", DEFAULT_TAG)
 
-TAGS = ["Health/Wearables", "CarFi", "Other"]
-DEFAULT_TAG = "Health/Wearables"
-
-# Ensure widget keys exist (blank by default)
-for idx in range(1, MAX_ITEMS + 1):
-    st.session_state.setdefault(f"rev_{idx}", "")            # blank revenue
-    st.session_state.setdefault(f"desc_{idx}", "")           # blank item
-    st.session_state.setdefault(f"tag_{idx}", DEFAULT_TAG)   # default tag
+ss_init()
 
 # -----------------------------
 # Helpers
 # -----------------------------
-def get_rph_color(rph: float) -> str:
-    if rph >= RPH_TARGET:
-        scale = min((rph - RPH_TARGET) / (RPH_MAX_GREEN - RPH_TARGET), 1.0)
-        green_value = int(150 + (105 * scale))
-        return f"rgb(0,{green_value},0)"
-    else:
-        scale = min((RPH_TARGET - rph) / RPH_TARGET, 1.0)
-        red_value = int(150 + (105 * scale))
-        return f"rgb({red_value},0,0)"
-
 def parse_money(s: str) -> float:
-    if s is None:
-        return 0.0
-    s = str(s).strip()
+    s = (s or "").strip().replace("$", "").replace(",", "")
     if not s:
         return 0.0
-    s = s.replace("$", "").replace(",", "")
     try:
         return float(s)
     except ValueError:
         return 0.0
 
-def _shift_lines_up(start_index: int):
-    for j in range(start_index, st.session_state.item_count):
-        st.session_state[f"rev_{j}"] = st.session_state.get(f"rev_{j+1}", "")
-        st.session_state[f"desc_{j}"] = st.session_state.get(f"desc_{j+1}", "")
-        st.session_state[f"tag_{j}"] = st.session_state.get(f"tag_{j+1}", DEFAULT_TAG)
+def rph_color(rph: float) -> str:
+    if rph >= RPH_TARGET:
+        scale = min((rph - RPH_TARGET) / (RPH_MAX_GREEN - RPH_TARGET), 1.0)
+        g = int(150 + 105 * scale)
+        return f"rgb(0,{g},0)"
+    scale = min((RPH_TARGET - rph) / RPH_TARGET, 1.0)
+    r = int(150 + 105 * scale)
+    return f"rgb({r},0,0)"
 
-    last = st.session_state.item_count
-    st.session_state[f"rev_{last}"] = ""
-    st.session_state[f"desc_{last}"] = ""
-    st.session_state[f"tag_{last}"] = DEFAULT_TAG
+def shift_up(start_idx: int):
+    ss = st.session_state
+    for j in range(start_idx, ss.item_count):
+        ss[f"rev_{j}"] = ss.get(f"rev_{j+1}", "")
+        ss[f"desc_{j}"] = ss.get(f"desc_{j+1}", "")
+        ss[f"tag_{j}"] = ss.get(f"tag_{j+1}", DEFAULT_TAG)
 
-def add_line_cb():
-    if st.session_state.item_count < MAX_ITEMS:
-        st.session_state.item_count += 1
+    last = ss.item_count
+    ss[f"rev_{last}"] = ""
+    ss[f"desc_{last}"] = ""
+    ss[f"tag_{last}"] = DEFAULT_TAG
 
-def remove_line_cb(i: int):
-    # only lines 2+ removable
-    if st.session_state.item_count <= 1 or i < 2 or i > st.session_state.item_count:
+def add_item():
+    ss = st.session_state
+    if ss.item_count < MAX_ITEMS:
+        ss.item_count += 1
+
+def remove_item(i: int):
+    ss = st.session_state
+    if ss.item_count <= 1 or i < 2 or i > ss.item_count:
         return
-    _shift_lines_up(i)
-    st.session_state.item_count -= 1
+    shift_up(i)
+    ss.item_count -= 1
 
-def add_sale_cb():
-    added = 0
-    for i in range(1, st.session_state.item_count + 1):
-        revenue = parse_money(st.session_state.get(f"rev_{i}", ""))
-        desc = (st.session_state.get(f"desc_{i}", "") or "").strip()
-        tag = st.session_state.get(f"tag_{i}", DEFAULT_TAG)
-
-        if revenue > 0:
-            st.session_state.sales.append({"revenue": revenue, "desc": desc, "tag": tag})
-            added += 1
-
-    # Clear inputs safely in callback
+def clear_items():
+    ss = st.session_state
     for i in range(1, MAX_ITEMS + 1):
-        st.session_state[f"rev_{i}"] = ""
-        st.session_state[f"desc_{i}"] = ""
-        st.session_state[f"tag_{i}"] = DEFAULT_TAG
-    st.session_state.item_count = 1
-    st.session_state._last_added = added
+        ss[f"rev_{i}"] = ""
+        ss[f"desc_{i}"] = ""
+        ss[f"tag_{i}"] = DEFAULT_TAG
+    ss.item_count = 1
+
+def add_sale():
+    ss = st.session_state
+    added = 0
+    for i in range(1, ss.item_count + 1):
+        revenue = parse_money(ss.get(f"rev_{i}", ""))
+        if revenue <= 0:
+            continue
+        ss.sales.append(
+            {
+                "revenue": revenue,
+                "desc": (ss.get(f"desc_{i}", "") or "").strip(),
+                "tag": ss.get(f"tag_{i}", DEFAULT_TAG),
+            }
+        )
+        added += 1
+    clear_items()
+    ss._last_added = added
 
 # -----------------------------
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
-
-# Mobile toggle (helps prevent column stacking weirdness on phone)
-st.session_state.mobile_layout = st.toggle(
-    "Mobile layout (recommended on phone)",
-    value=st.session_state.mobile_layout
-)
-
 st.header("Add Sale")
 
 if "_last_added" in st.session_state:
-    if st.session_state._last_added > 0:
-        st.success(f"Added {st.session_state._last_added} item(s).")
+    n = st.session_state._last_added
+    if n > 0:
+        st.success(f"Added {n} item(s).")
     else:
         st.warning("Nothing added. Enter revenue > $0 for at least one item.")
     del st.session_state._last_added
 
-ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
+# Compact row layout: [X][Revenue][Item][Tag]
+X_COL, REV_COL, DESC_COL, TAG_COL = 0.16, 1.05, 2.85, 1.20
 
-# -----------------------------
-# Add Sale Inputs (desktop vs mobile)
-# -----------------------------
-if not st.session_state.mobile_layout:
-    # Desktop/wide: X | Revenue | Item | Tag
-    X_COL, REV_COL, DESC_COL, TAG_COL = 0.16, 1.05, 2.85, 1.20
+for i in range(1, st.session_state.item_count + 1):
+    c_x, c_rev, c_desc, c_tag = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
 
-    for i in range(1, st.session_state.item_count + 1):
-        c_x, c_rev, c_desc, c_tag = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
+    with c_x:
+        if i == 1:
+            st.write("")
+        else:
+            st.button("✕", key=f"rm_{i}", type="secondary", on_click=remove_item, args=(i,), help=f"Remove item {i}")
 
-        with c_x:
-            if i == 1:
-                st.write("")
-            else:
-                st.button(
-                    "✕",
-                    key=f"rm_{i}",
-                    type="secondary",
-                    help=f"Remove item {i}",
-                    on_click=remove_line_cb,
-                    args=(i,),
-                )
+    with c_rev:
+        st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
 
-        with c_rev:
-            st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
-
-        with c_desc:
-            st.text_input("Item", key=f"desc_{i}", label_visibility="collapsed", placeholder=ITEM_PLACEHOLDER)
-
-        with c_tag:
-            st.selectbox(
-                "Tag",
-                TAGS,
-                index=TAGS.index(st.session_state.get(f"tag_{i}", DEFAULT_TAG)),
-                key=f"tag_{i}",
-                label_visibility="collapsed",
-            )
-
-    # Add item button under Revenue column
-    c_x2, c_rev2, c_desc2, c_tag2 = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
-    with c_rev2:
-        st.button(
-            "＋ Add item",
-            key="add_item_btn",
-            type="secondary",
-            disabled=st.session_state.item_count >= MAX_ITEMS,
-            on_click=add_line_cb,
-        )
-
-else:
-    # Mobile: keep X next to Revenue so it doesn't float above the row
-    for i in range(1, st.session_state.item_count + 1):
-        if i > 1:
-            st.markdown("---")
-
-        c_left, c_right = st.columns([0.18, 0.82], vertical_alignment="center")
-        with c_left:
-            if i == 1:
-                st.write("")
-            else:
-                st.button(
-                    "✕",
-                    key=f"rm_m_{i}",
-                    type="secondary",
-                    help=f"Remove item {i}",
-                    on_click=remove_line_cb,
-                    args=(i,),
-                )
-        with c_right:
-            st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
-
+    with c_desc:
         st.text_input("Item", key=f"desc_{i}", label_visibility="collapsed", placeholder=ITEM_PLACEHOLDER)
 
+    with c_tag:
         st.selectbox(
             "Tag",
             TAGS,
@@ -254,74 +249,68 @@ else:
             label_visibility="collapsed",
         )
 
+# Add item under Revenue column
+_, c_add, _, _ = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
+with c_add:
     st.button(
         "＋ Add item",
-        key="add_item_btn_mobile",
+        key="add_item_btn",
         type="secondary",
         disabled=st.session_state.item_count >= MAX_ITEMS,
-        on_click=add_line_cb,
+        on_click=add_item,
     )
 
-# Add Sale button
-st.button("Add Sale", key="add_sale_btn", type="primary", on_click=add_sale_cb)
+st.button("Add Sale", key="add_sale_btn", type="primary", on_click=add_sale)
 
 # -----------------------------
 # Metrics
 # -----------------------------
 st.header("Today's Performance")
-
-hours_worked = st.number_input(
-    "Hours Worked Today",
-    min_value=1.0,
-    max_value=16.0,
-    value=8.0,
-    step=0.5
-)
+hours_worked = st.number_input("Hours Worked Today", min_value=1.0, max_value=16.0, value=8.0, step=0.5)
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
-category_revenue = sum(
-    s["revenue"] for s in st.session_state.sales
-    if s.get("tag") in ["Health/Wearables", "CarFi"]
-)
+category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ("Health/Wearables", "CarFi"))
 other_revenue = total_revenue - category_revenue
 
-rph = total_revenue / hours_worked if hours_worked else 0
-revmix = category_revenue / total_revenue if total_revenue > 0 else 0
-
-color = get_rph_color(rph)
+rph = total_revenue / hours_worked if hours_worked else 0.0
+revmix = (category_revenue / total_revenue) if total_revenue > 0 else 0.0
 
 st.markdown(
     f"""
-    <h2>Total Revenue: ${total_revenue:,.2f}</h2>
-    <h2 style='color:{color}'>RPH: ${rph:,.2f}</h2>
-    <h2>Category Revenue: ${category_revenue:,.2f}</h2>
-    <h2>Revmix: {revmix*100:.2f}%</h2>
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+                padding: 14px 16px; border-radius: 14px;">
+      <div style="color: #9aa3b2; font-weight:600; letter-spacing:0.2px;">Today</div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:8px;">
+        <div><div style="color:#7f8796; font-size:12px;">Total Revenue</div>
+             <div style="color:#d7dbe6; font-size:22px; font-weight:800;">${total_revenue:,.2f}</div></div>
+        <div><div style="color:#7f8796; font-size:12px;">RPH</div>
+             <div style="color:{rph_color(rph)}; font-size:22px; font-weight:900;">${rph:,.2f}</div></div>
+        <div><div style="color:#7f8796; font-size:12px;">Category Revenue</div>
+             <div style="color:#d7dbe6; font-size:22px; font-weight:800;">${category_revenue:,.2f}</div></div>
+        <div><div style="color:#7f8796; font-size:12px;">Revmix</div>
+             <div style="color:#d7dbe6; font-size:22px; font-weight:800;">{revmix*100:.2f}%</div></div>
+      </div>
+    </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 # -----------------------------
 # Pie Chart
 # -----------------------------
 st.subheader("Revenue Breakdown")
-
 if total_revenue > 0:
     fig = plt.figure()
-    plt.pie(
-        [category_revenue, other_revenue],
-        labels=["Category", "Other"],
-        autopct="%1.1f%%"
-    )
+    plt.pie([category_revenue, other_revenue], labels=["Category", "Other"], autopct="%1.1f%%")
     plt.title("Category vs Other Revenue")
     st.pyplot(fig)
 else:
     st.info("No revenue yet to display.")
 
 # -----------------------------
-# What Do I Need
+# Targets
 # -----------------------------
 st.subheader("What Do I Need to Hit Target?")
-
 required_total = RPH_TARGET * hours_worked
 additional_needed = max(required_total - total_revenue, 0)
 
@@ -344,16 +333,16 @@ else:
 st.header("Sales History")
 
 if st.session_state.sales:
-    for i, sale in enumerate(st.session_state.sales):
+    for i, s in enumerate(st.session_state.sales):
         col1, col2, col3, col4 = st.columns([1.2, 3.2, 1.4, 0.8])
         with col1:
-            st.write(f"${sale['revenue']:,.2f}")
+            st.write(f"${s['revenue']:,.2f}")
         with col2:
-            st.write(sale.get("desc", "") or "(No description)")
+            st.write(s.get("desc") or "(No description)")
         with col3:
-            st.write(sale.get("tag", DEFAULT_TAG))
+            st.write(s.get("tag", DEFAULT_TAG))
         with col4:
-            if st.button("❌", key=f"delete_{i}"):
+            if st.button("❌", key=f"del_{i}"):
                 st.session_state.sales.pop(i)
                 st.rerun()
 else:
