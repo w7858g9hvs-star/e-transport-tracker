@@ -1,6 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-from datetime import date, datetime, time
+from datetime import date
 
 # -----------------------------
 # Config
@@ -17,6 +17,7 @@ ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + instal
 # Discord-ish palette (used for chart + cards)
 BG = "#0f111a"
 CARD = "#151926"
+BORDER = (1, 1, 1, 0.08)
 TEXT = "#d7dbe6"
 MUTED = "#9aa3b2"
 MUTED2 = "#7f8796"
@@ -113,47 +114,6 @@ st.markdown(
 )
 
 # -----------------------------
-# Schedule helpers (auto-hours)
-# -----------------------------
-def _default_schedule():
-    # 0=Mon ... 6=Sun
-    return {
-        0: {"on": True,  "start": "10:00", "end": "18:00"},
-        1: {"on": True,  "start": "10:00", "end": "18:00"},
-        2: {"on": True,  "start": "10:00", "end": "18:00"},
-        3: {"on": True,  "start": "10:00", "end": "18:00"},
-        4: {"on": True,  "start": "10:00", "end": "18:00"},
-        5: {"on": True,  "start": "12:00", "end": "20:00"},
-        6: {"on": False, "start": "10:00", "end": "18:00"},
-    }
-
-def _parse_hhmm(s: str) -> time:
-    h, m = s.split(":")
-    return time(int(h), int(m))
-
-def calc_hours_worked(now: datetime, schedule: dict) -> float:
-    d = now.weekday()
-    day = schedule.get(d, {"on": False, "start": "00:00", "end": "00:00"})
-    if not day.get("on", False):
-        return 0.0
-
-    start_t = _parse_hhmm(day["start"])
-    end_t = _parse_hhmm(day["end"])
-
-    start_dt = now.replace(hour=start_t.hour, minute=start_t.minute, second=0, microsecond=0)
-    end_dt = now.replace(hour=end_t.hour, minute=end_t.minute, second=0, microsecond=0)
-
-    # Cross-midnight shift support
-    if end_dt <= start_dt:
-        end_dt = end_dt.replace(day=end_dt.day + 1)
-
-    if now <= start_dt:
-        return 0.0
-    if now >= end_dt:
-        return (end_dt - start_dt).total_seconds() / 3600.0
-    return (now - start_dt).total_seconds() / 3600.0
-
-# -----------------------------
 # Session State
 # -----------------------------
 def ss_init():
@@ -165,23 +125,15 @@ def ss_init():
         ss.sales = []
         ss.item_count = 1
 
-    # Daily reset
     if ss.current_date != today:
         ss.current_date = today
         ss.sales = []
         ss.item_count = 1
 
-    # Item inputs
     for i in range(1, MAX_ITEMS + 1):
         ss.setdefault(f"rev_{i}", "")
         ss.setdefault(f"desc_{i}", "")
         ss.setdefault(f"tag_{i}", DEFAULT_TAG)
-
-    # Schedule + manual override
-    ss.setdefault("schedule", _default_schedule())
-    ss.setdefault("manual_hours_on", False)
-    ss.setdefault("manual_hours_value", 8.0)
-    ss.setdefault("last_refresh", "")
 
 ss_init()
 
@@ -260,57 +212,6 @@ def add_sale():
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
-
-# Refresh/time indicator + schedule control
-now = datetime.now()
-st.session_state.last_refresh = now.strftime("%a %I:%M:%S %p")
-
-top_l, top_r = st.columns([3, 2], vertical_alignment="center")
-with top_l:
-    st.caption(f"🕒 Last refreshed: {st.session_state.last_refresh}")
-with top_r:
-    with st.expander("📅 Schedule", expanded=False):
-        st.caption("RPH hours are calculated from your schedule unless Manual Override is enabled.")
-        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        for i, name in enumerate(days):
-            c_on, c_start, c_end = st.columns([1, 1, 1], vertical_alignment="center")
-            with c_on:
-                st.session_state.schedule[i]["on"] = st.checkbox(
-                    name,
-                    value=st.session_state.schedule[i]["on"],
-                    key=f"sch_on_{i}",
-                )
-            with c_start:
-                st.session_state.schedule[i]["start"] = st.text_input(
-                    "Start",
-                    value=st.session_state.schedule[i]["start"],
-                    key=f"sch_start_{i}",
-                    label_visibility="collapsed",
-                )
-            with c_end:
-                st.session_state.schedule[i]["end"] = st.text_input(
-                    "End",
-                    value=st.session_state.schedule[i]["end"],
-                    key=f"sch_end_{i}",
-                    label_visibility="collapsed",
-                )
-
-        st.divider()
-        st.session_state.manual_hours_on = st.toggle(
-            "Manual override hours",
-            value=st.session_state.manual_hours_on,
-            key="manual_hours_on_toggle",
-        )
-        if st.session_state.manual_hours_on:
-            st.session_state.manual_hours_value = st.number_input(
-                "Manual hours worked",
-                min_value=0.0,
-                max_value=16.0,
-                value=float(st.session_state.manual_hours_value),
-                step=0.5,
-                key="manual_hours_value_input",
-            )
-
 st.header("Add Sale")
 
 if "_last_added" in st.session_state:
@@ -365,16 +266,13 @@ st.button("Add Sale", key="add_sale_btn", type="primary", on_click=add_sale)
 # Metrics
 # -----------------------------
 st.header("Today's Performance")
-
-auto_hours = calc_hours_worked(now, st.session_state.schedule)
-hours_worked = float(st.session_state.manual_hours_value) if st.session_state.manual_hours_on else auto_hours
-st.caption(f"Hours worked (auto): {auto_hours:.2f}" + ("  •  using manual override" if st.session_state.manual_hours_on else ""))
+hours_worked = st.number_input("Hours Worked Today", min_value=1.0, max_value=16.0, value=8.0, step=0.5)
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
 category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ("Health/Wearables", "CarFi"))
 other_revenue = total_revenue - category_revenue
 
-rph = total_revenue / hours_worked if hours_worked > 0 else 0.0
+rph = total_revenue / hours_worked if hours_worked else 0.0
 revmix = (category_revenue / total_revenue) if total_revenue > 0 else 0.0
 
 st.markdown(
