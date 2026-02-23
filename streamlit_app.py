@@ -14,18 +14,18 @@ TAGS = ["Health/Wearables", "CarFi", "Other"]
 DEFAULT_TAG = "Health/Wearables"
 ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
 
-# Discord-ish palette (used for chart + cards)
+# Discord-ish palette
 BG = "#0f111a"
 CARD = "#151926"
 TEXT = "#d7dbe6"
 MUTED = "#9aa3b2"
 MUTED2 = "#7f8796"
-ACCENT = "#5865F2"  # discord blurple
+ACCENT = "#5865F2"
 
 st.set_page_config(layout="wide")
 
 # -----------------------------
-# Discord-ish dark styling (softer text, muted UI)
+# Theme / styling
 # -----------------------------
 st.markdown(
     f"""
@@ -61,7 +61,7 @@ st.markdown(
 
     .stTextInput, .stSelectbox {{ margin-top: -6px; }}
 
-    /* Secondary buttons (✕ and + Add item): small, muted, no box */
+    /* Secondary buttons (✕ and + Add item): muted, no box */
     div[data-testid="stBaseButton-secondary"] > button {{
       background: transparent !important;
       border: none !important;
@@ -93,7 +93,7 @@ st.markdown(
       border: none !important;
     }}
 
-    /* Primary button: blurple */
+    /* Primary button */
     div[data-testid="stBaseButton-primary"] > button {{
       background: var(--accent) !important;
       border: 1px solid rgba(255,255,255,0.10) !important;
@@ -143,8 +143,7 @@ def calc_hours_worked(now: datetime, schedule: dict) -> float:
     start_dt = now.replace(hour=start_t.hour, minute=start_t.minute, second=0, microsecond=0)
     end_dt = now.replace(hour=end_t.hour, minute=end_t.minute, second=0, microsecond=0)
 
-    # Cross-midnight shift support
-    if end_dt <= start_dt:
+    if end_dt <= start_dt:  # cross-midnight
         end_dt = end_dt.replace(day=end_dt.day + 1)
 
     if now <= start_dt:
@@ -165,23 +164,20 @@ def ss_init():
         ss.sales = []
         ss.item_count = 1
 
-    # Daily reset
     if ss.current_date != today:
         ss.current_date = today
         ss.sales = []
         ss.item_count = 1
 
-    # Item inputs
     for i in range(1, MAX_ITEMS + 1):
         ss.setdefault(f"rev_{i}", "")
         ss.setdefault(f"desc_{i}", "")
         ss.setdefault(f"tag_{i}", DEFAULT_TAG)
 
-    # Schedule + manual override
     ss.setdefault("schedule", _default_schedule())
     ss.setdefault("manual_hours_on", False)
     ss.setdefault("manual_hours_value", 8.0)
-    ss.setdefault("last_refresh", "")
+    ss.setdefault("_last_added", None)
 
 ss_init()
 
@@ -261,51 +257,72 @@ def add_sale():
 # -----------------------------
 st.title("E-Transport Sales Tracker")
 
-# Refresh/time indicator + schedule control
+# ---- "Time clock" row (REPLACES hours worked bar) + schedule icon
 now = datetime.now()
-st.session_state.last_refresh = now.strftime("%a %I:%M:%S %p")
+clock_str = now.strftime("%I:%M:%S %p")  # ticking clock display (updates on rerun)
+last_refresh_str = now.strftime("%a %I:%M:%S %p")
 
-top_l, top_r = st.columns([3, 2], vertical_alignment="center")
-with top_l:
-    st.caption(f"🕒 Last refreshed: {st.session_state.last_refresh}")
-with top_r:
+auto_hours = calc_hours_worked(now, st.session_state.schedule)
+hours_worked = float(st.session_state.manual_hours_value) if st.session_state.manual_hours_on else auto_hours
+
+clock_l, clock_m, clock_r = st.columns([2.2, 2.0, 1.8], vertical_alignment="center")
+with clock_l:
+    st.markdown(
+        f"""
+        <div style="background:{CARD}; border:1px solid rgba(255,255,255,0.08);
+                    padding:10px 12px; border-radius:14px;">
+          <div style="color:{MUTED2}; font-size:12px;">Time</div>
+          <div style="color:{TEXT}; font-size:22px; font-weight:900; letter-spacing:0.3px;">{clock_str}</div>
+          <div style="color:{MUTED}; font-size:12px; margin-top:2px;">Last refresh: {last_refresh_str}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with clock_m:
+    st.markdown(
+        f"""
+        <div style="background:{CARD}; border:1px solid rgba(255,255,255,0.08);
+                    padding:10px 12px; border-radius:14px;">
+          <div style="color:{MUTED2}; font-size:12px;">Hours worked</div>
+          <div style="color:{TEXT}; font-size:22px; font-weight:900;">{hours_worked:.2f}</div>
+          <div style="color:{MUTED}; font-size:12px; margin-top:2px;">
+            Auto: {auto_hours:.2f}{(" • manual override" if st.session_state.manual_hours_on else "")}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with clock_r:
     with st.expander("📅 Schedule", expanded=False):
-        st.caption("RPH hours are calculated from your schedule unless Manual Override is enabled.")
+        st.caption("Hours worked is calculated from your schedule unless manual override is enabled.")
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         for i, name in enumerate(days):
             c_on, c_start, c_end = st.columns([1, 1, 1], vertical_alignment="center")
             with c_on:
                 st.session_state.schedule[i]["on"] = st.checkbox(
-                    name,
-                    value=st.session_state.schedule[i]["on"],
-                    key=f"sch_on_{i}",
+                    name, value=st.session_state.schedule[i]["on"], key=f"sch_on_{i}"
                 )
             with c_start:
                 st.session_state.schedule[i]["start"] = st.text_input(
-                    "Start",
-                    value=st.session_state.schedule[i]["start"],
-                    key=f"sch_start_{i}",
-                    label_visibility="collapsed",
+                    "Start", value=st.session_state.schedule[i]["start"], key=f"sch_start_{i}",
+                    label_visibility="collapsed"
                 )
             with c_end:
                 st.session_state.schedule[i]["end"] = st.text_input(
-                    "End",
-                    value=st.session_state.schedule[i]["end"],
-                    key=f"sch_end_{i}",
-                    label_visibility="collapsed",
+                    "End", value=st.session_state.schedule[i]["end"], key=f"sch_end_{i}",
+                    label_visibility="collapsed"
                 )
 
         st.divider()
         st.session_state.manual_hours_on = st.toggle(
-            "Manual override hours",
-            value=st.session_state.manual_hours_on,
-            key="manual_hours_on_toggle",
+            "Manual override hours", value=st.session_state.manual_hours_on, key="manual_hours_on_toggle"
         )
         if st.session_state.manual_hours_on:
             st.session_state.manual_hours_value = st.number_input(
                 "Manual hours worked",
-                min_value=0.0,
-                max_value=16.0,
+                min_value=0.0, max_value=16.0,
                 value=float(st.session_state.manual_hours_value),
                 step=0.5,
                 key="manual_hours_value_input",
@@ -313,15 +330,15 @@ with top_r:
 
 st.header("Add Sale")
 
-if "_last_added" in st.session_state:
+if st.session_state._last_added is not None:
     n = st.session_state._last_added
     if n > 0:
         st.success(f"Added {n} item(s).")
     else:
         st.warning("Nothing added. Enter revenue > $0 for at least one item.")
-    del st.session_state._last_added
+    st.session_state._last_added = None
 
-# Compact row layout: [X][Revenue][Item][Tag]
+# Add Sale rows: [X][Revenue][Item][Tag]
 X_COL, REV_COL, DESC_COL, TAG_COL = 0.16, 1.05, 2.85, 1.20
 
 for i in range(1, st.session_state.item_count + 1):
@@ -366,10 +383,6 @@ st.button("Add Sale", key="add_sale_btn", type="primary", on_click=add_sale)
 # -----------------------------
 st.header("Today's Performance")
 
-auto_hours = calc_hours_worked(now, st.session_state.schedule)
-hours_worked = float(st.session_state.manual_hours_value) if st.session_state.manual_hours_on else auto_hours
-st.caption(f"Hours worked (auto): {auto_hours:.2f}" + ("  •  using manual override" if st.session_state.manual_hours_on else ""))
-
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
 category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ("Health/Wearables", "CarFi"))
 other_revenue = total_revenue - category_revenue
@@ -401,7 +414,6 @@ st.markdown(
 # Pie Chart (dark-mode matching)
 # -----------------------------
 st.subheader("Revenue Breakdown")
-
 if total_revenue > 0:
     fig, ax = plt.subplots(figsize=(4.6, 4.6), dpi=130)
     fig.patch.set_facecolor(BG)
@@ -414,14 +426,12 @@ if total_revenue > 0:
         textprops={"color": MUTED, "fontsize": 10},
         wedgeprops={"linewidth": 1, "edgecolor": (1, 1, 1, 0.10)},
     )
-
     for t in autotexts:
         t.set_color(TEXT)
         t.set_fontsize(10)
         t.set_fontweight("bold")
 
     ax.set_title("Category vs Other Revenue", color=TEXT, fontsize=12, fontweight="bold", pad=10)
-
     st.pyplot(fig, transparent=True)
 else:
     st.info("No revenue yet to display.")
@@ -454,7 +464,6 @@ else:
 # Sales History
 # -----------------------------
 st.header("Sales History")
-
 if st.session_state.sales:
     for i, s in enumerate(st.session_state.sales):
         col1, col2, col3, col4 = st.columns([1.2, 3.2, 1.4, 0.8])
