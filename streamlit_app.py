@@ -318,7 +318,7 @@ if total_revenue > 0:
         t.set_fontsize(10)
         t.set_fontweight("bold")
 
-    ax.set_title("Category vs Other Revenue", color=TEXT, fontsize=12, fontweight="bold", pad=10)
+   
 
     st.pyplot(fig, transparent=True)
 else:
