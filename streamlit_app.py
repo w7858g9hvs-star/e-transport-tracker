@@ -10,24 +10,30 @@ MAX_ITEMS = 10
 st.set_page_config(layout="wide")
 
 # -----------------------------
-# CSS: make secondary buttons look like plain grey icons (no box)
+# CSS: secondary buttons as plain grey icons; center content
 # -----------------------------
 st.markdown(
     """
     <style>
-    /* Remove button chrome on SECONDARY buttons (we use secondary for ✕ and + Add line) */
     div[data-testid="stBaseButton-secondary"] > button {
         background: transparent !important;
         border: none !important;
         outline: none !important;
         box-shadow: none !important;
+
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+
         padding: 0px 6px !important;
         min-height: 22px !important;
         height: 22px !important;
         line-height: 22px !important;
-        color: #9aa0a6 !important;  /* grey */
+
+        color: #9aa0a6 !important;
         font-size: 14px !important;
         font-weight: 700 !important;
+
         border-radius: 8px !important;
         width: auto !important;
     }
@@ -44,7 +50,7 @@ st.markdown(
         border: none !important;
     }
 
-    /* Tighten vertical spacing a bit */
+    /* Slightly tighter top padding */
     div.block-container { padding-top: 1.6rem; }
     </style>
     """,
@@ -70,13 +76,14 @@ if st.session_state.current_date != str(date.today()):
     st.session_state.current_date = str(date.today())
     st.session_state.item_count = 1
 
+TAGS = ["Health/Wearables", "CarFi", "Other"]
+DEFAULT_TAG = "Health/Wearables"
+
 # Ensure widget keys exist (blank by default)
 for idx in range(1, MAX_ITEMS + 1):
-    st.session_state.setdefault(f"rev_{idx}", "")          # blank revenue
-    st.session_state.setdefault(f"desc_{idx}", "")         # blank description
-    st.session_state.setdefault(f"tag_{idx}", "Other")     # single tag
-
-TAGS = ["Health/Wearables", "CarFi", "Other"]
+    st.session_state.setdefault(f"rev_{idx}", "")            # blank revenue
+    st.session_state.setdefault(f"desc_{idx}", "")           # blank item
+    st.session_state.setdefault(f"tag_{idx}", DEFAULT_TAG)   # default tag
 
 # -----------------------------
 # Helpers
@@ -107,12 +114,12 @@ def _shift_lines_up(start_index: int):
     for j in range(start_index, st.session_state.item_count):
         st.session_state[f"rev_{j}"] = st.session_state.get(f"rev_{j+1}", "")
         st.session_state[f"desc_{j}"] = st.session_state.get(f"desc_{j+1}", "")
-        st.session_state[f"tag_{j}"] = st.session_state.get(f"tag_{j+1}", "Other")
+        st.session_state[f"tag_{j}"] = st.session_state.get(f"tag_{j+1}", DEFAULT_TAG)
 
     last = st.session_state.item_count
     st.session_state[f"rev_{last}"] = ""
     st.session_state[f"desc_{last}"] = ""
-    st.session_state[f"tag_{last}"] = "Other"
+    st.session_state[f"tag_{last}"] = DEFAULT_TAG
 
 def add_line_cb():
     if st.session_state.item_count < MAX_ITEMS:
@@ -130,17 +137,17 @@ def add_sale_cb():
     for i in range(1, st.session_state.item_count + 1):
         revenue = parse_money(st.session_state.get(f"rev_{i}", ""))
         desc = (st.session_state.get(f"desc_{i}", "") or "").strip()
-        tag = st.session_state.get(f"tag_{i}", "Other")
+        tag = st.session_state.get(f"tag_{i}", DEFAULT_TAG)
 
         if revenue > 0:
             st.session_state.sales.append({"revenue": revenue, "desc": desc, "tag": tag})
             added += 1
 
-    # Clear inputs safely (callback context)
+    # Clear inputs safely in callback
     for i in range(1, MAX_ITEMS + 1):
         st.session_state[f"rev_{i}"] = ""
         st.session_state[f"desc_{i}"] = ""
-        st.session_state[f"tag_{i}"] = "Other"
+        st.session_state[f"tag_{i}"] = DEFAULT_TAG
     st.session_state.item_count = 1
     st.session_state._last_added = added
 
@@ -149,7 +156,7 @@ def add_sale_cb():
 # -----------------------------
 st.title("E-Transport Sales Tracker")
 
-# Mobile toggle (top, easy to reach on phone)
+# Mobile toggle (helps prevent column stacking weirdness on phone)
 st.session_state.mobile_layout = st.toggle(
     "Mobile layout (recommended on phone)",
     value=st.session_state.mobile_layout
@@ -164,13 +171,13 @@ if "_last_added" in st.session_state:
         st.warning("Nothing added. Enter revenue > $0 for at least one item.")
     del st.session_state._last_added
 
-# -----------------------------
-# Add Sale Inputs (two layouts)
-# -----------------------------
 ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
 
+# -----------------------------
+# Add Sale Inputs (desktop vs mobile)
+# -----------------------------
 if not st.session_state.mobile_layout:
-    # Desktop / wide layout: X | Revenue | Item | Tag
+    # Desktop/wide: X | Revenue | Item | Tag
     X_COL, REV_COL, DESC_COL, TAG_COL = 0.16, 1.05, 2.85, 1.20
 
     for i in range(1, st.session_state.item_count + 1):
@@ -184,7 +191,7 @@ if not st.session_state.mobile_layout:
                     "✕",
                     key=f"rm_{i}",
                     type="secondary",
-                    help=f"Remove line {i}",
+                    help=f"Remove item {i}",
                     on_click=remove_line_cb,
                     args=(i,),
                 )
@@ -199,28 +206,28 @@ if not st.session_state.mobile_layout:
             st.selectbox(
                 "Tag",
                 TAGS,
-                index=TAGS.index(st.session_state.get(f"tag_{i}", "Other")),
+                index=TAGS.index(st.session_state.get(f"tag_{i}", DEFAULT_TAG)),
                 key=f"tag_{i}",
                 label_visibility="collapsed",
             )
 
-    # Add line under Revenue column
+    # Add item button under Revenue column
     c_x2, c_rev2, c_desc2, c_tag2 = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
     with c_rev2:
         st.button(
-            "＋ Add line",
-            key="add_line_btn",
+            "＋ Add item",
+            key="add_item_btn",
             type="secondary",
             disabled=st.session_state.item_count >= MAX_ITEMS,
             on_click=add_line_cb,
         )
 
 else:
-    # Mobile layout: keep X with Revenue so it doesn't float above (Streamlit stacks columns on narrow screens)
+    # Mobile: keep X next to Revenue so it doesn't float above the row
     for i in range(1, st.session_state.item_count + 1):
-        st.markdown("---") if i > 1 else None
+        if i > 1:
+            st.markdown("---")
 
-        # Row 1: (optional X) + Revenue
         c_left, c_right = st.columns([0.18, 0.82], vertical_alignment="center")
         with c_left:
             if i == 1:
@@ -230,29 +237,26 @@ else:
                     "✕",
                     key=f"rm_m_{i}",
                     type="secondary",
-                    help=f"Remove line {i}",
+                    help=f"Remove item {i}",
                     on_click=remove_line_cb,
                     args=(i,),
                 )
         with c_right:
             st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
 
-        # Row 2: Item
         st.text_input("Item", key=f"desc_{i}", label_visibility="collapsed", placeholder=ITEM_PLACEHOLDER)
 
-        # Row 3: Tag
         st.selectbox(
             "Tag",
             TAGS,
-            index=TAGS.index(st.session_state.get(f"tag_{i}", "Other")),
+            index=TAGS.index(st.session_state.get(f"tag_{i}", DEFAULT_TAG)),
             key=f"tag_{i}",
             label_visibility="collapsed",
         )
 
-    # Add line button (full width on mobile)
     st.button(
-        "＋ Add line",
-        key="add_line_btn_mobile",
+        "＋ Add item",
+        key="add_item_btn_mobile",
         type="secondary",
         disabled=st.session_state.item_count >= MAX_ITEMS,
         on_click=add_line_cb,
@@ -275,7 +279,10 @@ hours_worked = st.number_input(
 )
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
-category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ["Health/Wearables", "CarFi"])
+category_revenue = sum(
+    s["revenue"] for s in st.session_state.sales
+    if s.get("tag") in ["Health/Wearables", "CarFi"]
+)
 other_revenue = total_revenue - category_revenue
 
 rph = total_revenue / hours_worked if hours_worked else 0
@@ -344,7 +351,7 @@ if st.session_state.sales:
         with col2:
             st.write(sale.get("desc", "") or "(No description)")
         with col3:
-            st.write(sale.get("tag", "Other"))
+            st.write(sale.get("tag", DEFAULT_TAG))
         with col4:
             if st.button("❌", key=f"delete_{i}"):
                 st.session_state.sales.pop(i)
