@@ -1,5 +1,5 @@
 import streamlit as st
-import matplotlib.pyplot as plt
+import pandas as pd
 from datetime import date
 
 RPH_TARGET = 300
@@ -21,26 +21,25 @@ if st.session_state.current_date != str(date.today()):
     st.session_state.current_date = str(date.today())
 
 # -----------------------------
-# RPH Color Logic
+# Helper: Color Gradient for RPH
 # -----------------------------
 def get_rph_color(rph):
     if rph >= RPH_TARGET:
+        # Scale green intensity between 300 and 600
         scale = min((rph - RPH_TARGET) / (RPH_MAX_GREEN - RPH_TARGET), 1)
-        green_value = int(150 + (105 * scale))
+        green_value = int(150 + (105 * scale))  # light → strong green
         return f"rgb(0,{green_value},0)"
     else:
+        # Scale red intensity below 300
         scale = min((RPH_TARGET - rph) / RPH_TARGET, 1)
-        red_value = int(150 + (105 * scale))
+        red_value = int(150 + (105 * scale))  # light → strong red
         return f"rgb({red_value},0,0)"
 
 # -----------------------------
-# Title
+# UI — Add Sale
 # -----------------------------
 st.title("E-Transport Sales Tracker")
 
-# -----------------------------
-# Add Sale Section
-# -----------------------------
 st.header("Add Sale")
 
 col1, col2 = st.columns(2)
@@ -50,7 +49,7 @@ with col1:
 
 with col2:
     categories = st.multiselect(
-        "Category Tags (Basket Attach Supported)",
+        "Select Category Tags",
         ["Health/Wearables", "CarFi", "Other"],
         default=[]
     )
@@ -65,7 +64,7 @@ if st.button("Add Sale"):
         st.rerun()
 
 # -----------------------------
-# Metrics Section
+# Metrics
 # -----------------------------
 st.header("Today's Performance")
 
@@ -85,8 +84,6 @@ category_revenue = sum(
     if any(cat in ["Health/Wearables", "CarFi"] for cat in s["categories"])
 )
 
-other_revenue = total_revenue - category_revenue
-
 rph = total_revenue / hours_worked if hours_worked else 0
 revmix = category_revenue / total_revenue if total_revenue > 0 else 0
 
@@ -103,24 +100,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# Pie Chart
-# -----------------------------
-st.subheader("Revenue Breakdown")
-
-if total_revenue > 0:
-    fig = plt.figure()
-    plt.pie(
-        [category_revenue, other_revenue],
-        labels=["Category", "Other"],
-        autopct="%1.1f%%"
-    )
-    plt.title("Category vs Other Revenue")
-    st.pyplot(fig)
-else:
-    st.info("No revenue yet to display.")
-
-# -----------------------------
-# What Do I Need Section
+# What Do I Need?
 # -----------------------------
 st.subheader("What Do I Need to Hit Target?")
 
@@ -141,13 +121,13 @@ else:
     st.success("Revmix Target Hit ✅")
 
 # -----------------------------
-# Sales History Section
+# Sales History with Remove
 # -----------------------------
 st.header("Sales History")
 
 if st.session_state.sales:
     for i, sale in enumerate(st.session_state.sales):
-        col1, col2, col3 = st.columns([4,3,1])
+        col1, col2, col3 = st.columns([4,2,1])
         with col1:
             st.write(f"${sale['revenue']:,.2f}")
         with col2:
@@ -158,4 +138,3 @@ if st.session_state.sales:
                 st.rerun()
 else:
     st.info("No sales recorded today.")
-    
