@@ -14,53 +14,56 @@ TAGS = ["Health/Wearables", "CarFi", "Other"]
 DEFAULT_TAG = "Health/Wearables"
 ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
 
+# Discord-ish palette (used for chart + cards)
+BG = "#0f111a"
+CARD = "#151926"
+BORDER = (1, 1, 1, 0.08)
+TEXT = "#d7dbe6"
+MUTED = "#9aa3b2"
+MUTED2 = "#7f8796"
+ACCENT = "#5865F2"  # discord blurple
+
 st.set_page_config(layout="wide")
 
 # -----------------------------
 # Discord-ish dark styling (softer text, muted UI)
 # -----------------------------
 st.markdown(
-    """
+    f"""
     <style>
-    :root {
-      --bg: #0f111a;
-      --card: #151926;
-      --card2: #171c2b;
+    :root {{
+      --bg: {BG};
+      --card: {CARD};
       --border: rgba(255,255,255,0.08);
-      --text: #d7dbe6;
-      --muted: #9aa3b2;
-      --muted2: #7f8796;
-      --accent: #5865F2; /* discord blurple */
-    }
+      --text: {TEXT};
+      --muted: {MUTED};
+      --muted2: {MUTED2};
+      --accent: {ACCENT};
+    }}
 
-    /* App background + base text */
-    .stApp { background: var(--bg); color: var(--text); }
-    h1,h2,h3,h4,h5,h6, p, label { color: var(--text) !important; }
-    .stCaption, small { color: var(--muted) !important; }
+    .stApp {{ background: var(--bg); color: var(--text); }}
+    h1,h2,h3,h4,h5,h6, p, label {{ color: var(--text) !important; }}
+    .stCaption, small {{ color: var(--muted) !important; }}
 
-    /* “Cards” / sections spacing */
-    div.block-container { padding-top: 1.5rem; max-width: 1100px; }
+    div.block-container {{ padding-top: 1.5rem; max-width: 1100px; }}
 
     /* Inputs */
     div[data-baseweb="input"] > div,
     div[data-baseweb="textarea"] > div,
-    div[data-baseweb="select"] > div {
+    div[data-baseweb="select"] > div {{
       background: var(--card) !important;
       border: 1px solid var(--border) !important;
       color: var(--text) !important;
       border-radius: 12px !important;
-    }
-    input, textarea { color: var(--text) !important; caret-color: var(--text) !important; }
-    input::placeholder, textarea::placeholder { color: var(--muted2) !important; }
+    }}
+    input, textarea {{ color: var(--text) !important; caret-color: var(--text) !important; }}
+    input::placeholder, textarea::placeholder {{ color: var(--muted2) !important; }}
+    div[data-baseweb="select"] span {{ color: var(--text) !important; }}
 
-    /* Streamlit select text */
-    div[data-baseweb="select"] span { color: var(--text) !important; }
-
-    /* Remove extra label space when collapsed */
-    .stTextInput, .stSelectbox { margin-top: -6px; }
+    .stTextInput, .stSelectbox {{ margin-top: -6px; }}
 
     /* Secondary buttons (✕ and + Add item): small, muted, no box */
-    div[data-testid="stBaseButton-secondary"] > button {
+    div[data-testid="stBaseButton-secondary"] > button {{
       background: transparent !important;
       border: none !important;
       box-shadow: none !important;
@@ -79,33 +82,32 @@ st.markdown(
       font-weight: 700 !important;
       border-radius: 10px !important;
       width: auto !important;
-    }
-    div[data-testid="stBaseButton-secondary"] > button:hover {
+    }}
+    div[data-testid="stBaseButton-secondary"] > button:hover {{
       background: rgba(255,255,255,0.06) !important;
       color: var(--text) !important;
-    }
+    }}
     div[data-testid="stBaseButton-secondary"] > button:focus,
-    div[data-testid="stBaseButton-secondary"] > button:focus-visible {
+    div[data-testid="stBaseButton-secondary"] > button:focus-visible {{
       outline: none !important;
       box-shadow: none !important;
       border: none !important;
-    }
+    }}
 
     /* Primary button: blurple */
-    div[data-testid="stBaseButton-primary"] > button {
+    div[data-testid="stBaseButton-primary"] > button {{
       background: var(--accent) !important;
       border: 1px solid rgba(255,255,255,0.10) !important;
       color: #fff !important;
       border-radius: 12px !important;
       padding: 0.55rem 1rem !important;
       font-weight: 700 !important;
-    }
-    div[data-testid="stBaseButton-primary"] > button:hover {
+    }}
+    div[data-testid="stBaseButton-primary"] > button:hover {{
       filter: brightness(1.05);
-    }
+    }}
 
-    /* Reduce harsh divider line */
-    hr { border-color: var(--border) !important; }
+    hr {{ border-color: var(--border) !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -123,13 +125,11 @@ def ss_init():
         ss.sales = []
         ss.item_count = 1
 
-    # Daily reset
     if ss.current_date != today:
         ss.current_date = today
         ss.sales = []
         ss.item_count = 1
 
-    # Item inputs
     for i in range(1, MAX_ITEMS + 1):
         ss.setdefault(f"rev_{i}", "")
         ss.setdefault(f"desc_{i}", "")
@@ -279,16 +279,16 @@ st.markdown(
     f"""
     <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
                 padding: 14px 16px; border-radius: 14px;">
-      <div style="color: #9aa3b2; font-weight:600; letter-spacing:0.2px;">Today</div>
+      <div style="color: {MUTED}; font-weight:600; letter-spacing:0.2px;">Today</div>
       <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:8px;">
-        <div><div style="color:#7f8796; font-size:12px;">Total Revenue</div>
-             <div style="color:#d7dbe6; font-size:22px; font-weight:800;">${total_revenue:,.2f}</div></div>
-        <div><div style="color:#7f8796; font-size:12px;">RPH</div>
+        <div><div style="color:{MUTED2}; font-size:12px;">Total Revenue</div>
+             <div style="color:{TEXT}; font-size:22px; font-weight:800;">${total_revenue:,.2f}</div></div>
+        <div><div style="color:{MUTED2}; font-size:12px;">RPH</div>
              <div style="color:{rph_color(rph)}; font-size:22px; font-weight:900;">${rph:,.2f}</div></div>
-        <div><div style="color:#7f8796; font-size:12px;">Category Revenue</div>
-             <div style="color:#d7dbe6; font-size:22px; font-weight:800;">${category_revenue:,.2f}</div></div>
-        <div><div style="color:#7f8796; font-size:12px;">Revmix</div>
-             <div style="color:#d7dbe6; font-size:22px; font-weight:800;">{revmix*100:.2f}%</div></div>
+        <div><div style="color:{MUTED2}; font-size:12px;">Category Revenue</div>
+             <div style="color:{TEXT}; font-size:22px; font-weight:800;">${category_revenue:,.2f}</div></div>
+        <div><div style="color:{MUTED2}; font-size:12px;">Revmix</div>
+             <div style="color:{TEXT}; font-size:22px; font-weight:800;">{revmix*100:.2f}%</div></div>
       </div>
     </div>
     """,
@@ -296,14 +296,31 @@ st.markdown(
 )
 
 # -----------------------------
-# Pie Chart
+# Pie Chart (dark-mode matching)
 # -----------------------------
 st.subheader("Revenue Breakdown")
+
 if total_revenue > 0:
-    fig = plt.figure()
-    plt.pie([category_revenue, other_revenue], labels=["Category", "Other"], autopct="%1.1f%%")
-    plt.title("Category vs Other Revenue")
-    st.pyplot(fig)
+    fig, ax = plt.subplots(figsize=(4.6, 4.6), dpi=130)
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+
+    wedges, texts, autotexts = ax.pie(
+        [category_revenue, other_revenue],
+        labels=["Category", "Other"],
+        autopct="%1.1f%%",
+        textprops={"color": MUTED, "fontsize": 10},
+        wedgeprops={"linewidth": 1, "edgecolor": (1, 1, 1, 0.10)},
+    )
+
+    for t in autotexts:
+        t.set_color(TEXT)
+        t.set_fontsize(10)
+        t.set_fontweight("bold")
+
+    ax.set_title("Category vs Other Revenue", color=TEXT, fontsize=12, fontweight="bold", pad=10)
+
+    st.pyplot(fig, transparent=True)
 else:
     st.info("No revenue yet to display.")
 
@@ -311,21 +328,25 @@ else:
 # Targets
 # -----------------------------
 st.subheader("What Do I Need to Hit Target?")
-required_total = RPH_TARGET * hours_worked
-additional_needed = max(required_total - total_revenue, 0)
 
-if additional_needed > 0:
-    st.write(f"You need **${additional_needed:,.2f} more total revenue** to hit $300 RPH.")
+if total_revenue <= 0:
+    st.info("No sales recorded today.")
 else:
-    st.success("RPH Target Hit ✅")
+    required_total = RPH_TARGET * hours_worked
+    additional_needed = max(required_total - total_revenue, 0)
 
-required_category = REVMIX_TARGET * total_revenue
-category_shortfall = max(required_category - category_revenue, 0)
+    if additional_needed > 0:
+        st.write(f"You need **${additional_needed:,.2f} more total revenue** to hit $300 RPH.")
+    else:
+        st.success("RPH Target Hit ✅")
 
-if category_shortfall > 0:
-    st.write(f"You need **${category_shortfall:,.2f} more in Category sales** to reach 60% revmix.")
-else:
-    st.success("Revmix Target Hit ✅")
+    required_category = REVMIX_TARGET * total_revenue
+    category_shortfall = max(required_category - category_revenue, 0)
+
+    if category_shortfall > 0:
+        st.write(f"You need **${category_shortfall:,.2f} more in Category sales** to reach 60% revmix.")
+    else:
+        st.success("Revmix Target Hit ✅")
 
 # -----------------------------
 # Sales History
@@ -347,3 +368,4 @@ if st.session_state.sales:
                 st.rerun()
 else:
     st.info("No sales recorded today.")
+    
