@@ -1,6 +1,5 @@
 import streamlit as st
 import matplotlib.pyplot as plt
-import streamlit.components.v1 as components
 from datetime import date
 
 RPH_TARGET = 300
@@ -11,6 +10,48 @@ MAX_ITEMS = 10
 st.set_page_config(layout="wide")
 
 # -----------------------------
+# CSS: make secondary buttons look like plain grey icons (no box)
+# -----------------------------
+st.markdown(
+    """
+    <style>
+    /* Remove button chrome on SECONDARY buttons (we use secondary for ✕ and + Add line) */
+    div[data-testid="stBaseButton-secondary"] > button {
+        background: transparent !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        padding: 0px 6px !important;
+        min-height: 22px !important;
+        height: 22px !important;
+        line-height: 22px !important;
+        color: #9aa0a6 !important;  /* grey */
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        width: auto !important;
+    }
+    div[data-testid="stBaseButton-secondary"] > button:hover {
+        background: rgba(255,255,255,0.06) !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stBaseButton-secondary"] > button:focus,
+    div[data-testid="stBaseButton-secondary"] > button:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    /* Tighten vertical spacing a bit */
+    div.block-container { padding-top: 1.6rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# -----------------------------
 # Session init
 # -----------------------------
 if "sales" not in st.session_state:
@@ -19,6 +60,9 @@ if "sales" not in st.session_state:
 
 if "item_count" not in st.session_state:
     st.session_state.item_count = 1
+
+if "mobile_layout" not in st.session_state:
+    st.session_state.mobile_layout = False
 
 # Auto daily reset
 if st.session_state.current_date != str(date.today()):
@@ -70,17 +114,18 @@ def _shift_lines_up(start_index: int):
     st.session_state[f"desc_{last}"] = ""
     st.session_state[f"tag_{last}"] = "Other"
 
-def remove_line(i: int):
-    if st.session_state.item_count <= 1 or i > st.session_state.item_count or i < 2:
+def add_line_cb():
+    if st.session_state.item_count < MAX_ITEMS:
+        st.session_state.item_count += 1
+
+def remove_line_cb(i: int):
+    # only lines 2+ removable
+    if st.session_state.item_count <= 1 or i < 2 or i > st.session_state.item_count:
         return
     _shift_lines_up(i)
     st.session_state.item_count -= 1
 
-def add_line():
-    if st.session_state.item_count < MAX_ITEMS:
-        st.session_state.item_count += 1
-
-def add_sale():
+def add_sale_cb():
     added = 0
     for i in range(1, st.session_state.item_count + 1):
         revenue = parse_money(st.session_state.get(f"rev_{i}", ""))
@@ -91,7 +136,7 @@ def add_sale():
             st.session_state.sales.append({"revenue": revenue, "desc": desc, "tag": tag})
             added += 1
 
-    # Clear inputs
+    # Clear inputs safely (callback context)
     for i in range(1, MAX_ITEMS + 1):
         st.session_state[f"rev_{i}"] = ""
         st.session_state[f"desc_{i}"] = ""
@@ -100,22 +145,16 @@ def add_sale():
     st.session_state._last_added = added
 
 # -----------------------------
-# Handle query param actions (remove line)
-# -----------------------------
-params = st.experimental_get_query_params()
-if "rm" in params:
-    try:
-        rm_idx = int(params["rm"][0])
-        remove_line(rm_idx)
-    except Exception:
-        pass
-    # Clear param to prevent repeated actions
-    st.experimental_set_query_params()
-
-# -----------------------------
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
+
+# Mobile toggle (top, easy to reach on phone)
+st.session_state.mobile_layout = st.toggle(
+    "Mobile layout (recommended on phone)",
+    value=st.session_state.mobile_layout
+)
+
 st.header("Add Sale")
 
 if "_last_added" in st.session_state:
@@ -125,61 +164,83 @@ if "_last_added" in st.session_state:
         st.warning("Nothing added. Enter revenue > $0 for at least one item.")
     del st.session_state._last_added
 
-# Layout widths: [X icon][Revenue][Description][Tag]
-X_COL = 0.18
-REV_COL = 1.05
-DESC_COL = 2.85
-TAG_COL = 1.20
+# -----------------------------
+# Add Sale Inputs (two layouts)
+# -----------------------------
+ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
 
-def x_icon(rm_index: int):
-    """
-    HTML ✕ icon (no box). Clicking sets ?rm=<index>.
-    """
-    components.html(
-        f"""
-        <div style="display:flex; align-items:center; justify-content:center; height:40px;">
-          <a href="?rm={rm_index}"
-             style="
-                text-decoration:none;
-                color:#9aa0a6;
-                font-size:16px;
-                font-weight:700;
-                line-height:16px;
-                padding:0 4px;
-             "
-             title="Remove line {rm_index}"
-          >✕</a>
-        </div>
-        """,
-        height=42,
-    )
+if not st.session_state.mobile_layout:
+    # Desktop / wide layout: X | Revenue | Item | Tag
+    X_COL, REV_COL, DESC_COL, TAG_COL = 0.16, 1.05, 2.85, 1.20
 
-for i in range(1, st.session_state.item_count + 1):
-    c_x, c_rev, c_desc, c_tag = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
+    for i in range(1, st.session_state.item_count + 1):
+        c_x, c_rev, c_desc, c_tag = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
 
-    with c_x:
-        if i == 1:
-            st.write("")
-        else:
-            x_icon(i)
+        with c_x:
+            if i == 1:
+                st.write("")
+            else:
+                st.button(
+                    "✕",
+                    key=f"rm_{i}",
+                    type="secondary",
+                    help=f"Remove line {i}",
+                    on_click=remove_line_cb,
+                    args=(i,),
+                )
 
-    with c_rev:
-        st.text_input(
-            "Revenue",
-            key=f"rev_{i}",
-            label_visibility="collapsed",
-            placeholder="Revenue",
+        with c_rev:
+            st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
+
+        with c_desc:
+            st.text_input("Item", key=f"desc_{i}", label_visibility="collapsed", placeholder=ITEM_PLACEHOLDER)
+
+        with c_tag:
+            st.selectbox(
+                "Tag",
+                TAGS,
+                index=TAGS.index(st.session_state.get(f"tag_{i}", "Other")),
+                key=f"tag_{i}",
+                label_visibility="collapsed",
+            )
+
+    # Add line under Revenue column
+    c_x2, c_rev2, c_desc2, c_tag2 = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
+    with c_rev2:
+        st.button(
+            "＋ Add line",
+            key="add_line_btn",
+            type="secondary",
+            disabled=st.session_state.item_count >= MAX_ITEMS,
+            on_click=add_line_cb,
         )
 
-    with c_desc:
-        st.text_input(
-            "Item",
-            key=f"desc_{i}",
-            label_visibility="collapsed",
-            placeholder="Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)",
-        )
+else:
+    # Mobile layout: keep X with Revenue so it doesn't float above (Streamlit stacks columns on narrow screens)
+    for i in range(1, st.session_state.item_count + 1):
+        st.markdown("---") if i > 1 else None
 
-    with c_tag:
+        # Row 1: (optional X) + Revenue
+        c_left, c_right = st.columns([0.18, 0.82], vertical_alignment="center")
+        with c_left:
+            if i == 1:
+                st.write("")
+            else:
+                st.button(
+                    "✕",
+                    key=f"rm_m_{i}",
+                    type="secondary",
+                    help=f"Remove line {i}",
+                    on_click=remove_line_cb,
+                    args=(i,),
+                )
+        with c_right:
+            st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
+
+        # Row 2: Item
+        st.text_input("Item", key=f"desc_{i}", label_visibility="collapsed", placeholder=ITEM_PLACEHOLDER)
+
+        # Row 3: Tag
         st.selectbox(
             "Tag",
             TAGS,
@@ -188,24 +249,30 @@ for i in range(1, st.session_state.item_count + 1):
             label_visibility="collapsed",
         )
 
-# Add line button under revenue column
-c_x2, c_rev2, c_desc2, c_tag2 = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
-with c_rev2:
-    if st.button("＋ Add line", disabled=st.session_state.item_count >= MAX_ITEMS):
-        add_line()
-        st.rerun()
+    # Add line button (full width on mobile)
+    st.button(
+        "＋ Add line",
+        key="add_line_btn_mobile",
+        type="secondary",
+        disabled=st.session_state.item_count >= MAX_ITEMS,
+        on_click=add_line_cb,
+    )
 
-# Add Sale
-if st.button("Add Sale"):
-    add_sale()
-    st.rerun()
+# Add Sale button
+st.button("Add Sale", key="add_sale_btn", type="primary", on_click=add_sale_cb)
 
 # -----------------------------
 # Metrics
 # -----------------------------
 st.header("Today's Performance")
 
-hours_worked = st.number_input("Hours Worked Today", min_value=1.0, max_value=16.0, value=8.0, step=0.5)
+hours_worked = st.number_input(
+    "Hours Worked Today",
+    min_value=1.0,
+    max_value=16.0,
+    value=8.0,
+    step=0.5
+)
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
 category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ["Health/Wearables", "CarFi"])
@@ -223,21 +290,31 @@ st.markdown(
     <h2>Category Revenue: ${category_revenue:,.2f}</h2>
     <h2>Revmix: {revmix*100:.2f}%</h2>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
-# Pie chart
+# -----------------------------
+# Pie Chart
+# -----------------------------
 st.subheader("Revenue Breakdown")
+
 if total_revenue > 0:
     fig = plt.figure()
-    plt.pie([category_revenue, other_revenue], labels=["Category", "Other"], autopct="%1.1f%%")
+    plt.pie(
+        [category_revenue, other_revenue],
+        labels=["Category", "Other"],
+        autopct="%1.1f%%"
+    )
     plt.title("Category vs Other Revenue")
     st.pyplot(fig)
 else:
     st.info("No revenue yet to display.")
 
-# What do I need
+# -----------------------------
+# What Do I Need
+# -----------------------------
 st.subheader("What Do I Need to Hit Target?")
+
 required_total = RPH_TARGET * hours_worked
 additional_needed = max(required_total - total_revenue, 0)
 
@@ -254,8 +331,11 @@ if category_shortfall > 0:
 else:
     st.success("Revmix Target Hit ✅")
 
-# Sales history
+# -----------------------------
+# Sales History
+# -----------------------------
 st.header("Sales History")
+
 if st.session_state.sales:
     for i, sale in enumerate(st.session_state.sales):
         col1, col2, col3, col4 = st.columns([1.2, 3.2, 1.4, 0.8])
