@@ -5,7 +5,7 @@ from datetime import date
 RPH_TARGET = 300
 RPH_MAX_GREEN = 600
 REVMIX_TARGET = 0.60
-MAX_ITEMS = 3
+MAX_ITEMS = 10
 
 st.set_page_config(layout="wide")
 
@@ -86,19 +86,27 @@ def remove_line(line_index: int):
 st.title("E-Transport Sales Tracker")
 
 # -----------------------------
-# Add Sale (compact, progressive)
+# Add Sale (compact, progressive, up to 10)
+# Layout: [X] [Revenue] [Tags]
 # -----------------------------
 st.header("Add Sale")
 
-# Use a form so the layout stays tight and inputs feel like a single “basket”
 with st.form("add_sale_form", clear_on_submit=False):
 
-    # Render line items compactly
     for i in range(1, st.session_state.item_count + 1):
-        # Revenue | Tags | Remove (for lines > 1)
-        c1, c2, c3 = st.columns([1.2, 3.2, 0.35], vertical_alignment="center")
+        # X button (left) | Revenue (middle) | Tags (right)
+        c_x, c_rev, c_tags = st.columns([0.45, 1.25, 3.3], vertical_alignment="center")
 
-        with c1:
+        with c_x:
+            if i == 1:
+                st.write("")  # keep alignment on first row
+            else:
+                # Remove this line
+                if st.form_submit_button("❌", key=f"rm_{i}", help=f"Remove item {i}"):
+                    remove_line(i)
+                    st.rerun()
+
+        with c_rev:
             st.number_input(
                 "Revenue ($)",
                 min_value=0.0,
@@ -108,35 +116,24 @@ with st.form("add_sale_form", clear_on_submit=False):
                 placeholder="Revenue",
             )
 
-        with c2:
+        with c_tags:
             st.multiselect(
-                "Tags",
+                "Category Tags",
                 ["Health/Wearables", "CarFi", "Other"],
                 key=f"tags_{i}",
                 label_visibility="collapsed",
                 placeholder="Category tags",
             )
 
-        with c3:
-            if i == 1:
-                st.write("")  # keep alignment
-            else:
-                # minus button for this line
-                if st.form_submit_button("−", help=f"Remove item {i}"):
-                    remove_line(i)
-                    st.rerun()
-
-    # Add-line button goes at the bottom under the last row
-    bottom_left, bottom_mid, bottom_right = st.columns([1.2, 3.2, 0.35], vertical_alignment="center")
-    with bottom_right:
-        if st.form_submit_button("＋", help="Add another item"):
+    # Add-line button row: put the + under the Revenue column (NOT far right)
+    c_x2, c_rev2, c_tags2 = st.columns([0.45, 1.25, 3.3], vertical_alignment="center")
+    with c_rev2:
+        if st.form_submit_button("➕ Add line", help="Add another item (max 10)"):
             if st.session_state.item_count < MAX_ITEMS:
                 st.session_state.item_count += 1
             st.rerun()
 
-    # Main submit button
     submitted = st.form_submit_button("Add Sale")
-
     if submitted:
         count = add_sale_items()
         if count > 0:
