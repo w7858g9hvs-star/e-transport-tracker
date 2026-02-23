@@ -1,6 +1,10 @@
+import json
+from pathlib import Path
+
 import streamlit as st
 import matplotlib.pyplot as plt
-from datetime import date
+from datetime import datetime, date
+from zoneinfo import ZoneInfo  # Python 3.9+
 
 # -----------------------------
 # Config
@@ -14,19 +18,25 @@ TAGS = ["Health/Wearables", "CarFi", "Other"]
 DEFAULT_TAG = "Health/Wearables"
 ITEM_PLACEHOLDER = "Item (ex: Apple Watch SE 3, Oura Ring, Car speakers + install)"
 
-# Discord-ish palette (used for chart + cards)
+# Discord-ish palette
 BG = "#0f111a"
 CARD = "#151926"
-BORDER = (1, 1, 1, 0.08)
 TEXT = "#d7dbe6"
 MUTED = "#9aa3b2"
 MUTED2 = "#7f8796"
 ACCENT = "#5865F2"  # discord blurple
 
+# Eastern time
+ET = ZoneInfo("America/New_York")
+
+# Local persistence folder
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+
 st.set_page_config(layout="wide")
 
 # -----------------------------
-# Discord-ish dark styling (softer text, muted UI)
+# Styling
 # -----------------------------
 st.markdown(
     f"""
@@ -114,22 +124,51 @@ st.markdown(
 )
 
 # -----------------------------
+# Persistence helpers
+# -----------------------------
+def et_day_key() -> str:
+    # Day key in Eastern time
+    return datetime.now(ET).date().isoformat()
+
+def sales_file(day_key: str) -> Path:
+    return DATA_DIR / f"sales_{day_key}.json"
+
+def load_sales(day_key: str) -> list[dict]:
+    fp = sales_file(day_key)
+    if not fp.exists():
+        return []
+    try:
+        return json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+def save_sales(day_key: str, sales: list[dict]) -> None:
+    sales_file(day_key).write_text(json.dumps(sales, indent=2), encoding="utf-8")
+
+# -----------------------------
 # Session State
 # -----------------------------
 def ss_init():
     ss = st.session_state
-    today = str(date.today())
+    today = et_day_key()
 
-    if "current_date" not in ss:
-        ss.current_date = today
-        ss.sales = []
-        ss.item_count = 1
+    # init basics
+    ss.setdefault("current_date", today)
+    ss.setdefault("sales", [])
+    ss.setdefault("item_count", 1)
+    ss.setdefault("_last_added", None)
 
+    # If day changed (in ET), load new day file
     if ss.current_date != today:
         ss.current_date = today
-        ss.sales = []
+        ss.sales = load_sales(today)
         ss.item_count = 1
 
+    # If new session / sales empty, reload today's sales from disk
+    if not ss.sales:
+        ss.sales = load_sales(today)
+
+    # inputs
     for i in range(1, MAX_ITEMS + 1):
         ss.setdefault(f"rev_{i}", "")
         ss.setdefault(f"desc_{i}", "")
@@ -171,9 +210,8 @@ def shift_up(start_idx: int):
     ss[f"tag_{last}"] = DEFAULT_TAG
 
 def add_item():
-    ss = st.session_state
-    if ss.item_count < MAX_ITEMS:
-        ss.item_count += 1
+    if st.session_state.item_count < MAX_ITEMS:
+        st.session_state.item_count += 1
 
 def remove_item(i: int):
     ss = st.session_state
@@ -202,25 +240,38 @@ def add_sale():
                 "revenue": revenue,
                 "desc": (ss.get(f"desc_{i}", "") or "").strip(),
                 "tag": ss.get(f"tag_{i}", DEFAULT_TAG),
+                "ts": datetime.now(ET).strftime("%H:%M:%S"),
             }
         )
         added += 1
+
+    # Persist immediately (this is the key)
+    save_sales(ss.current_date, ss.sales)
+
     clear_items()
     ss._last_added = added
+
+def delete_sale(idx: int):
+    ss = st.session_state
+    if 0 <= idx < len(ss.sales):
+        ss.sales.pop(idx)
+        save_sales(ss.current_date, ss.sales)
 
 # -----------------------------
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
+st.caption(f"Date (ET): **{st.session_state.current_date}**")
+
 st.header("Add Sale")
 
-if "_last_added" in st.session_state:
+if st.session_state._last_added is not None:
     n = st.session_state._last_added
+    st.session_state._last_added = None
     if n > 0:
         st.success(f"Added {n} item(s).")
     else:
         st.warning("Nothing added. Enter revenue > $0 for at least one item.")
-    del st.session_state._last_added
 
 # Compact row layout: [X][Revenue][Item][Tag]
 X_COL, REV_COL, DESC_COL, TAG_COL = 0.16, 1.05, 2.85, 1.20
@@ -232,7 +283,7 @@ for i in range(1, st.session_state.item_count + 1):
         if i == 1:
             st.write("")
         else:
-            st.button("✕", key=f"rm_{i}", type="secondary", on_click=remove_item, args=(i,), help=f"Remove item {i}")
+            st.button("✕", key=f"rm_{i}", type="secondary", on_click=remove_item, args=(i,))
 
     with c_rev:
         st.text_input("Revenue", key=f"rev_{i}", label_visibility="collapsed", placeholder="Revenue")
@@ -249,18 +300,11 @@ for i in range(1, st.session_state.item_count + 1):
             label_visibility="collapsed",
         )
 
-# Add item under Revenue column
 _, c_add, _, _ = st.columns([X_COL, REV_COL, DESC_COL, TAG_COL], vertical_alignment="center")
 with c_add:
-    st.button(
-        "＋ Add item",
-        key="add_item_btn",
-        type="secondary",
-        disabled=st.session_state.item_count >= MAX_ITEMS,
-        on_click=add_item,
-    )
+    st.button("＋ Add item", type="secondary", on_click=add_item, disabled=st.session_state.item_count >= MAX_ITEMS)
 
-st.button("Add Sale", key="add_sale_btn", type="primary", on_click=add_sale)
+st.button("Add Sale", type="primary", on_click=add_sale)
 
 # -----------------------------
 # Metrics
@@ -296,10 +340,9 @@ st.markdown(
 )
 
 # -----------------------------
-# Pie Chart (dark-mode matching)
+# Pie Chart
 # -----------------------------
 st.subheader("Revenue Breakdown")
-
 if total_revenue > 0:
     fig, ax = plt.subplots(figsize=(4.6, 4.6), dpi=130)
     fig.patch.set_facecolor(BG)
@@ -319,7 +362,6 @@ if total_revenue > 0:
         t.set_fontweight("bold")
 
     ax.set_title("Category vs Other Revenue", color=TEXT, fontsize=12, fontweight="bold", pad=10)
-
     st.pyplot(fig, transparent=True)
 else:
     st.info("No revenue yet to display.")
@@ -328,7 +370,6 @@ else:
 # Targets
 # -----------------------------
 st.subheader("What Do I Need to Hit Target?")
-
 if total_revenue <= 0:
     st.info("No sales recorded today.")
 else:
@@ -355,16 +396,18 @@ st.header("Sales History")
 
 if st.session_state.sales:
     for i, s in enumerate(st.session_state.sales):
-        col1, col2, col3, col4 = st.columns([1.2, 3.2, 1.4, 0.8])
+        col1, col2, col3, col4, col5 = st.columns([1.0, 1.2, 3.2, 1.4, 0.8])
         with col1:
-            st.write(f"${s['revenue']:,.2f}")
+            st.write(s.get("ts", "--:--:--"))
         with col2:
-            st.write(s.get("desc") or "(No description)")
+            st.write(f"${s['revenue']:,.2f}")
         with col3:
-            st.write(s.get("tag", DEFAULT_TAG))
+            st.write(s.get("desc") or "(No description)")
         with col4:
+            st.write(s.get("tag", DEFAULT_TAG))
+        with col5:
             if st.button("❌", key=f"del_{i}"):
-                st.session_state.sales.pop(i)
+                delete_sale(i)
                 st.rerun()
 else:
     st.info("No sales recorded today.")
