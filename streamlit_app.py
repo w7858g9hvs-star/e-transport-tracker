@@ -75,7 +75,7 @@ st.markdown(
 
     .stTextInput, .stSelectbox {{ margin-top: -6px; }}
 
-    /* Secondary buttons (✕ and + Add item): small, muted, no box */
+    /* Secondary buttons (✕, + Add item, refresh): small, muted, no box */
     div[data-testid="stBaseButton-secondary"] > button {{
       background: transparent !important;
       border: none !important;
@@ -92,7 +92,7 @@ st.markdown(
       line-height: 22px !important;
 
       font-size: 14px !important;
-      font-weight: 700 !important;
+      font-weight: 800 !important;
       border-radius: 10px !important;
       width: auto !important;
     }}
@@ -365,7 +365,6 @@ def ensure_schedule_editor_state(schedule: dict):
             shifts = schedule.get("weekly", {}).get(d, []) or []
             ss[f"sched_count_{d}"] = max(len(shifts), 0)
 
-            # Store each shift in time objects for time_input
             for i, sh in enumerate(shifts):
                 ss[f"sched_{d}_start_{i}"] = time_from_hhmm(sh.get("start"), time(9, 0))
                 ss[f"sched_{d}_end_{i}"] = time_from_hhmm(sh.get("end"), time(17, 0))
@@ -373,10 +372,6 @@ def ensure_schedule_editor_state(schedule: dict):
         ss._sched_editor_loaded = True
 
 def editor_to_schedule(schedule: dict) -> dict:
-    """
-    Builds schedule dict from editor fields, with basic cleanup:
-    - drops empty/invalid shifts
-    """
     ss = st.session_state
     new_sched = default_schedule()
     new_sched["version"] = schedule.get("version", 1)
@@ -400,16 +395,14 @@ def editor_to_schedule(schedule: dict) -> dict:
 # -----------------------------
 st.title("E-Transport Sales Tracker")
 
+# Caption + Refresh button (↻) next to it
 cap_l, cap_r = st.columns([0.88, 0.12], vertical_alignment="center")
-
 with cap_l:
     st.caption(
         f"Date (ET): **{st.session_state.current_date}**  |  "
         f"Last refresh: **{st.session_state['last_refresh_et'].strftime('%I:%M:%S %p ET')}**"
     )
-
 with cap_r:
-    # Tiny refresh button that forces a rerun; last_refresh_et updates at top-of-script each run
     if st.button("↻", type="secondary", help="Refresh time + recalc auto RPH", key="refresh_btn"):
         st.rerun()
 
@@ -438,7 +431,6 @@ with st.popover("📅 Schedule"):
                 st.info("No shifts set for this day.")
             else:
                 for i in range(count):
-                    # defaults if newly added
                     st.session_state.setdefault(f"sched_{d}_start_{i}", time(9, 0))
                     st.session_state.setdefault(f"sched_{d}_end_{i}", time(17, 0))
 
@@ -451,8 +443,12 @@ with st.popover("📅 Schedule"):
                         if st.button("✕", key=f"rm_shift_{d}_{i}", type="secondary"):
                             # remove by shifting later shifts up
                             for j in range(i, count - 1):
-                                st.session_state[f"sched_{d}_start_{j}"] = st.session_state.get(f"sched_{d}_start_{j+1}", time(9, 0))
-                                st.session_state[f"sched_{d}_end_{j}"] = st.session_state.get(f"sched_{d}_end_{j+1}", time(17, 0))
+                                st.session_state[f"sched_{d}_start_{j}"] = st.session_state.get(
+                                    f"sched_{d}_start_{j+1}", time(9, 0)
+                                )
+                                st.session_state[f"sched_{d}_end_{j}"] = st.session_state.get(
+                                    f"sched_{d}_end_{j+1}", time(17, 0)
+                                )
                             st.session_state[f"sched_count_{d}"] = count - 1
                             st.rerun()
 
@@ -480,10 +476,10 @@ with st.popover("📅 Schedule"):
             ensure_schedule_editor_state(schedule)
             st.success("Cleared ✅")
 
-    # Quick preview for today
+    # Quick preview for today (saved schedule)
     today_key = weekday_key(now_et().date())
     st.write(f"**Today ({today_key}) shifts:**")
-    today_shifts = schedule.get("weekly", {}).get(today_key, [])
+    today_shifts = load_schedule().get("weekly", {}).get(today_key, [])
     if today_shifts:
         for sh in today_shifts:
             st.write(f"- {sh.get('start','??:??')} → {sh.get('end','??:??')}")
@@ -542,13 +538,15 @@ st.button("Add Sale", type="primary", on_click=add_sale)
 st.header("Today's Performance")
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
-category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ("Health/Wearables", "CarFi"))
+category_revenue = sum(
+    s["revenue"] for s in st.session_state.sales if s.get("tag") in ("Health/Wearables", "CarFi")
+)
 other_revenue = total_revenue - category_revenue
 
 now = now_et()
 # IMPORTANT: use the *saved* schedule (not unsaved editor changes)
-schedule = load_schedule()
-auto_hours = max(scheduled_hours_so_far(schedule, now), 0.0)
+saved_schedule = load_schedule()
+auto_hours = max(scheduled_hours_so_far(saved_schedule, now), 0.0)
 
 st.session_state.setdefault("use_manual_hours", False)
 use_manual = st.toggle("Manually override hours worked", value=st.session_state.use_manual_hours)
