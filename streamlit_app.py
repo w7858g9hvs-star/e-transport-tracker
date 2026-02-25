@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 import matplotlib.pyplot as plt
-from datetime import datetime, date
+from datetime import datetime, date, time
 from zoneinfo import ZoneInfo  # Python 3.9+
 
 # -----------------------------
@@ -37,7 +37,6 @@ DATA_DIR.mkdir(exist_ok=True)
 SCHEDULE_FILE = DATA_DIR / "schedule.json"
 
 st.set_page_config(layout="wide")
-
 
 # -----------------------------
 # Styling
@@ -127,24 +126,20 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # -----------------------------
 # Time helpers
 # -----------------------------
 def now_et() -> datetime:
     return datetime.now(ET)
 
-
 def et_day_key() -> str:
     return now_et().date().isoformat()
-
 
 # -----------------------------
 # Persistence helpers (Sales)
 # -----------------------------
 def sales_file(day_key: str) -> Path:
     return DATA_DIR / f"sales_{day_key}.json"
-
 
 def load_sales(day_key: str) -> list[dict]:
     fp = sales_file(day_key)
@@ -155,30 +150,20 @@ def load_sales(day_key: str) -> list[dict]:
     except Exception:
         return []
 
-
 def save_sales(day_key: str, sales: list[dict]) -> None:
     sales_file(day_key).write_text(json.dumps(sales, indent=2), encoding="utf-8")
-
 
 # -----------------------------
 # Persistence helpers (Schedule)
 # -----------------------------
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
 def default_schedule() -> dict:
-    # Weekly template (Mon..Sun), each day is list of {"start":"HH:MM","end":"HH:MM"}
     return {
         "version": 1,
         "timezone": "America/New_York",
-        "weekly": {
-            "Mon": [],
-            "Tue": [],
-            "Wed": [],
-            "Thu": [],
-            "Fri": [],
-            "Sat": [],
-            "Sun": [],
-        },
+        "weekly": {d: [] for d in WEEKDAYS},
     }
-
 
 def load_schedule() -> dict:
     if not SCHEDULE_FILE.exists():
@@ -187,13 +172,11 @@ def load_schedule() -> dict:
         data = json.loads(SCHEDULE_FILE.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             return default_schedule()
-        # Ensure keys exist
         out = default_schedule()
         out.update({k: data.get(k, out[k]) for k in out.keys()})
         if not isinstance(out.get("weekly"), dict):
             out["weekly"] = default_schedule()["weekly"]
-        # Ensure all weekdays present
-        for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        for d in WEEKDAYS:
             out["weekly"].setdefault(d, [])
             if not isinstance(out["weekly"][d], list):
                 out["weekly"][d] = []
@@ -201,10 +184,18 @@ def load_schedule() -> dict:
     except Exception:
         return default_schedule()
 
-
 def save_schedule(schedule: dict) -> None:
     SCHEDULE_FILE.write_text(json.dumps(schedule, indent=2), encoding="utf-8")
 
+def hhmm_from_time(t: time) -> str:
+    return t.strftime("%H:%M")
+
+def time_from_hhmm(s: str, fallback: time) -> time:
+    try:
+        h, m = (s or "").strip().split(":")
+        return time(int(h), int(m))
+    except Exception:
+        return fallback
 
 # -----------------------------
 # Session State (IMPORTANT: no stat resets)
@@ -213,39 +204,32 @@ def ss_init():
     ss = st.session_state
     today = et_day_key()
 
-    # One-time init guard so we don't reload/overwrite on every rerun
     ss.setdefault("_initialized", False)
-
     ss.setdefault("current_date", today)
     ss.setdefault("sales", [])
     ss.setdefault("item_count", 1)
     ss.setdefault("_last_added", None)
 
-    # Inputs
     for i in range(1, MAX_ITEMS + 1):
         ss.setdefault(f"rev_{i}", "")
         ss.setdefault(f"desc_{i}", "")
         ss.setdefault(f"tag_{i}", DEFAULT_TAG)
 
-    # If first load of the session: load today's sales from disk once
     if not ss._initialized:
         ss.current_date = today
         ss.sales = load_sales(today)
         ss.item_count = 1
         ss._initialized = True
 
-    # If day changed (ET), roll to new day and load that day from disk
     if ss.current_date != today:
         ss.current_date = today
         ss.sales = load_sales(today)
         ss.item_count = 1
 
-
 ss_init()
 
 # Always update last refresh each rerun (does NOT touch sales)
 st.session_state["last_refresh_et"] = now_et()
-
 
 # -----------------------------
 # Helpers
@@ -259,7 +243,6 @@ def parse_money(s: str) -> float:
     except ValueError:
         return 0.0
 
-
 def rph_color(rph: float) -> str:
     if rph >= RPH_TARGET:
         scale = min((rph - RPH_TARGET) / (RPH_MAX_GREEN - RPH_TARGET), 1.0)
@@ -268,7 +251,6 @@ def rph_color(rph: float) -> str:
     scale = min((RPH_TARGET - rph) / RPH_TARGET, 1.0)
     r = int(150 + 105 * scale)
     return f"rgb({r},0,0)"
-
 
 def shift_up(start_idx: int):
     ss = st.session_state
@@ -282,11 +264,9 @@ def shift_up(start_idx: int):
     ss[f"desc_{last}"] = ""
     ss[f"tag_{last}"] = DEFAULT_TAG
 
-
 def add_item():
     if st.session_state.item_count < MAX_ITEMS:
         st.session_state.item_count += 1
-
 
 def remove_item(i: int):
     ss = st.session_state
@@ -295,7 +275,6 @@ def remove_item(i: int):
     shift_up(i)
     ss.item_count -= 1
 
-
 def clear_items():
     ss = st.session_state
     for i in range(1, MAX_ITEMS + 1):
@@ -303,7 +282,6 @@ def clear_items():
         ss[f"desc_{i}"] = ""
         ss[f"tag_{i}"] = DEFAULT_TAG
     ss.item_count = 1
-
 
 def add_sale():
     ss = st.session_state
@@ -322,12 +300,9 @@ def add_sale():
         )
         added += 1
 
-    # Persist immediately
     save_sales(ss.current_date, ss.sales)
-
     clear_items()
     ss._last_added = added
-
 
 def delete_sale(idx: int):
     ss = st.session_state
@@ -335,19 +310,16 @@ def delete_sale(idx: int):
         ss.sales.pop(idx)
         save_sales(ss.current_date, ss.sales)
 
-
 # -----------------------------
 # Schedule -> hours worked so far today
 # -----------------------------
+def weekday_key(d: date) -> str:
+    return d.strftime("%a")  # Mon, Tue, ...
+
 def parse_hhmm(hhmm: str) -> tuple[int, int]:
     hhmm = (hhmm or "").strip()
     h, m = hhmm.split(":")
     return int(h), int(m)
-
-
-def weekday_key(d: date) -> str:
-    return d.strftime("%a")  # Mon, Tue, ...
-
 
 def scheduled_hours_so_far(schedule: dict, now: datetime) -> float:
     weekly = (schedule or {}).get("weekly", {}) or {}
@@ -365,11 +337,10 @@ def scheduled_hours_so_far(schedule: dict, now: datetime) -> float:
         start_dt = now.replace(hour=sh_start_h, minute=sh_start_m, second=0, microsecond=0)
         end_dt = now.replace(hour=sh_end_h, minute=sh_end_m, second=0, microsecond=0)
 
-        # Overnight shift support (end <= start means next day)
+        # Overnight shift support
         if end_dt <= start_dt:
             end_dt = end_dt.replace(day=end_dt.day + 1)
 
-        # Not started yet
         if now <= start_dt:
             continue
 
@@ -378,67 +349,141 @@ def scheduled_hours_so_far(schedule: dict, now: datetime) -> float:
 
     return total_seconds / 3600.0
 
+# -----------------------------
+# Schedule Editor (easy in-app input)
+# -----------------------------
+def ensure_schedule_editor_state(schedule: dict):
+    """
+    Mirrors saved schedule into session_state editable fields once per session
+    (and again if user hits 'Reload from saved').
+    """
+    ss = st.session_state
+    ss.setdefault("_sched_editor_loaded", False)
+
+    if not ss._sched_editor_loaded:
+        for d in WEEKDAYS:
+            shifts = schedule.get("weekly", {}).get(d, []) or []
+            ss[f"sched_count_{d}"] = max(len(shifts), 0)
+
+            # Store each shift in time objects for time_input
+            for i, sh in enumerate(shifts):
+                ss[f"sched_{d}_start_{i}"] = time_from_hhmm(sh.get("start"), time(9, 0))
+                ss[f"sched_{d}_end_{i}"] = time_from_hhmm(sh.get("end"), time(17, 0))
+
+        ss._sched_editor_loaded = True
+
+def editor_to_schedule(schedule: dict) -> dict:
+    """
+    Builds schedule dict from editor fields, with basic cleanup:
+    - drops empty/invalid shifts
+    """
+    ss = st.session_state
+    new_sched = default_schedule()
+    new_sched["version"] = schedule.get("version", 1)
+    new_sched["timezone"] = schedule.get("timezone", "America/New_York")
+
+    for d in WEEKDAYS:
+        count = int(ss.get(f"sched_count_{d}", 0) or 0)
+        day_shifts = []
+        for i in range(count):
+            start_t = ss.get(f"sched_{d}_start_{i}")
+            end_t = ss.get(f"sched_{d}_end_{i}")
+            if not isinstance(start_t, time) or not isinstance(end_t, time):
+                continue
+            day_shifts.append({"start": hhmm_from_time(start_t), "end": hhmm_from_time(end_t)})
+        new_sched["weekly"][d] = day_shifts
+
+    return new_sched
 
 # -----------------------------
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
-
 st.caption(
     f"Date (ET): **{st.session_state.current_date}**  |  "
     f"Last refresh: **{st.session_state['last_refresh_et'].strftime('%I:%M:%S %p ET')}**"
 )
 
-# Schedule popover (📅)
+# Load schedule ONCE (doesn't affect sales)
 schedule = load_schedule()
+ensure_schedule_editor_state(schedule)
+
 with st.popover("📅 Schedule"):
-    st.write(
-        "Upload a **schedule.json** (weekly template). It will persist until you replace or clear it.\n\n"
-        "Format example:\n"
-        "- weekly -> Mon..Sun -> list of shifts\n"
-        "- shift: {\"start\":\"HH:MM\",\"end\":\"HH:MM\"}"
-    )
+    st.write("Set your weekly work shifts here. This saves locally and stays until you change it.")
 
-    up = st.file_uploader("Upload schedule.json", type=["json"], key="schedule_uploader")
-    if up is not None:
-        try:
-            new_schedule = json.loads(up.read().decode("utf-8"))
-            # Light validation/coercion
-            if not isinstance(new_schedule, dict):
-                raise ValueError("Top-level JSON must be an object/dict.")
-            if "weekly" not in new_schedule or not isinstance(new_schedule["weekly"], dict):
-                raise ValueError("Missing or invalid 'weekly' object.")
-            # Ensure weekdays exist
-            for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
-                new_schedule["weekly"].setdefault(d, [])
-                if not isinstance(new_schedule["weekly"][d], list):
-                    new_schedule["weekly"][d] = []
-            new_schedule.setdefault("version", 1)
-            new_schedule.setdefault("timezone", "America/New_York")
+    tab = st.tabs(WEEKDAYS)
+    for d, ttab in zip(WEEKDAYS, tab):
+        with ttab:
+            c1, c2, c3 = st.columns([1.3, 1.3, 1.4])
+            with c1:
+                if st.button("＋ Add shift", key=f"add_shift_{d}", type="secondary"):
+                    st.session_state[f"sched_count_{d}"] = int(st.session_state.get(f"sched_count_{d}", 0) or 0) + 1
+            with c2:
+                if st.button("Clear day", key=f"clear_day_{d}", type="secondary"):
+                    st.session_state[f"sched_count_{d}"] = 0
+            with c3:
+                st.caption("Multiple shifts supported (ex: 10–2 and 3–7).")
 
-            save_schedule(new_schedule)
-            schedule = new_schedule
+            count = int(st.session_state.get(f"sched_count_{d}", 0) or 0)
+            if count == 0:
+                st.info("No shifts set for this day.")
+            else:
+                for i in range(count):
+                    # defaults if newly added
+                    st.session_state.setdefault(f"sched_{d}_start_{i}", time(9, 0))
+                    st.session_state.setdefault(f"sched_{d}_end_{i}", time(17, 0))
+
+                    r1, r2, r3 = st.columns([1.2, 1.2, 0.6], vertical_alignment="center")
+                    with r1:
+                        st.time_input("Start", key=f"sched_{d}_start_{i}", label_visibility="collapsed")
+                    with r2:
+                        st.time_input("End", key=f"sched_{d}_end_{i}", label_visibility="collapsed")
+                    with r3:
+                        if st.button("✕", key=f"rm_shift_{d}_{i}", type="secondary"):
+                            # remove by shifting later shifts up
+                            for j in range(i, count - 1):
+                                st.session_state[f"sched_{d}_start_{j}"] = st.session_state.get(f"sched_{d}_start_{j+1}", time(9, 0))
+                                st.session_state[f"sched_{d}_end_{j}"] = st.session_state.get(f"sched_{d}_end_{j+1}", time(17, 0))
+                            st.session_state[f"sched_count_{d}"] = count - 1
+                            st.rerun()
+
+    st.divider()
+
+    c_save, c_reload, c_clear = st.columns([1.0, 1.0, 1.0])
+    with c_save:
+        if st.button("Save schedule", type="primary"):
+            schedule = editor_to_schedule(schedule)
+            save_schedule(schedule)
             st.success("Schedule saved ✅")
-        except Exception as e:
-            st.error(f"Invalid schedule JSON: {e}")
 
-    if st.button("Clear saved schedule", type="secondary"):
-        save_schedule(default_schedule())
-        schedule = load_schedule()
-        st.success("Schedule cleared.")
+    with c_reload:
+        if st.button("Reload from saved", type="secondary"):
+            schedule = load_schedule()
+            st.session_state["_sched_editor_loaded"] = False
+            ensure_schedule_editor_state(schedule)
+            st.success("Reloaded ✅")
 
-    # Quick preview
-    weekly = schedule.get("weekly", {})
+    with c_clear:
+        if st.button("Clear ALL schedule", type="secondary"):
+            save_schedule(default_schedule())
+            schedule = load_schedule()
+            st.session_state["_sched_editor_loaded"] = False
+            ensure_schedule_editor_state(schedule)
+            st.success("Cleared ✅")
+
+    # Quick preview for today
     today_key = weekday_key(now_et().date())
     st.write(f"**Today ({today_key}) shifts:**")
-    today_shifts = weekly.get(today_key, [])
+    today_shifts = schedule.get("weekly", {}).get(today_key, [])
     if today_shifts:
         for sh in today_shifts:
             st.write(f"- {sh.get('start','??:??')} → {sh.get('end','??:??')}")
     else:
         st.caption("No shifts for today.")
 
-
+# -----------------------------
+# Add Sale
+# -----------------------------
 st.header("Add Sale")
 
 if st.session_state._last_added is not None:
@@ -492,6 +537,8 @@ category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("ta
 other_revenue = total_revenue - category_revenue
 
 now = now_et()
+# IMPORTANT: use the *saved* schedule (not unsaved editor changes)
+schedule = load_schedule()
 auto_hours = max(scheduled_hours_so_far(schedule, now), 0.0)
 
 st.session_state.setdefault("use_manual_hours", False)
@@ -571,7 +618,6 @@ st.subheader("What Do I Need to Hit Target?")
 if total_revenue <= 0:
     st.info("No sales recorded today.")
 else:
-    # RPH target based on computed hours_worked (auto or manual)
     required_total = RPH_TARGET * hours_worked
     additional_needed = max(required_total - total_revenue, 0)
 
