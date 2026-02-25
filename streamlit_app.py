@@ -33,7 +33,11 @@ ET = ZoneInfo("America/New_York")
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
+# Schedule persistence
+SCHEDULE_FILE = DATA_DIR / "schedule.json"
+
 st.set_page_config(layout="wide")
+
 
 # -----------------------------
 # Styling
@@ -123,15 +127,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# -----------------------------
-# Persistence helpers
-# -----------------------------
-def et_day_key() -> str:
-    # Day key in Eastern time
-    return datetime.now(ET).date().isoformat()
 
+# -----------------------------
+# Time helpers
+# -----------------------------
+def now_et() -> datetime:
+    return datetime.now(ET)
+
+
+def et_day_key() -> str:
+    return now_et().date().isoformat()
+
+
+# -----------------------------
+# Persistence helpers (Sales)
+# -----------------------------
 def sales_file(day_key: str) -> Path:
     return DATA_DIR / f"sales_{day_key}.json"
+
 
 def load_sales(day_key: str) -> list[dict]:
     fp = sales_file(day_key)
@@ -142,39 +155,97 @@ def load_sales(day_key: str) -> list[dict]:
     except Exception:
         return []
 
+
 def save_sales(day_key: str, sales: list[dict]) -> None:
     sales_file(day_key).write_text(json.dumps(sales, indent=2), encoding="utf-8")
 
+
 # -----------------------------
-# Session State
+# Persistence helpers (Schedule)
+# -----------------------------
+def default_schedule() -> dict:
+    # Weekly template (Mon..Sun), each day is list of {"start":"HH:MM","end":"HH:MM"}
+    return {
+        "version": 1,
+        "timezone": "America/New_York",
+        "weekly": {
+            "Mon": [],
+            "Tue": [],
+            "Wed": [],
+            "Thu": [],
+            "Fri": [],
+            "Sat": [],
+            "Sun": [],
+        },
+    }
+
+
+def load_schedule() -> dict:
+    if not SCHEDULE_FILE.exists():
+        return default_schedule()
+    try:
+        data = json.loads(SCHEDULE_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return default_schedule()
+        # Ensure keys exist
+        out = default_schedule()
+        out.update({k: data.get(k, out[k]) for k in out.keys()})
+        if not isinstance(out.get("weekly"), dict):
+            out["weekly"] = default_schedule()["weekly"]
+        # Ensure all weekdays present
+        for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+            out["weekly"].setdefault(d, [])
+            if not isinstance(out["weekly"][d], list):
+                out["weekly"][d] = []
+        return out
+    except Exception:
+        return default_schedule()
+
+
+def save_schedule(schedule: dict) -> None:
+    SCHEDULE_FILE.write_text(json.dumps(schedule, indent=2), encoding="utf-8")
+
+
+# -----------------------------
+# Session State (IMPORTANT: no stat resets)
 # -----------------------------
 def ss_init():
     ss = st.session_state
     today = et_day_key()
 
-    # init basics
+    # One-time init guard so we don't reload/overwrite on every rerun
+    ss.setdefault("_initialized", False)
+
     ss.setdefault("current_date", today)
     ss.setdefault("sales", [])
     ss.setdefault("item_count", 1)
     ss.setdefault("_last_added", None)
 
-    # If day changed (in ET), load new day file
-    if ss.current_date != today:
-        ss.current_date = today
-        ss.sales = load_sales(today)
-        ss.item_count = 1
-
-    # If new session / sales empty, reload today's sales from disk
-    if not ss.sales:
-        ss.sales = load_sales(today)
-
-    # inputs
+    # Inputs
     for i in range(1, MAX_ITEMS + 1):
         ss.setdefault(f"rev_{i}", "")
         ss.setdefault(f"desc_{i}", "")
         ss.setdefault(f"tag_{i}", DEFAULT_TAG)
 
+    # If first load of the session: load today's sales from disk once
+    if not ss._initialized:
+        ss.current_date = today
+        ss.sales = load_sales(today)
+        ss.item_count = 1
+        ss._initialized = True
+
+    # If day changed (ET), roll to new day and load that day from disk
+    if ss.current_date != today:
+        ss.current_date = today
+        ss.sales = load_sales(today)
+        ss.item_count = 1
+
+
 ss_init()
+
+# Always update last refresh each rerun (does NOT touch sales)
+st.session_state["last_refresh_et"] = now_et()
+
 
 # -----------------------------
 # Helpers
@@ -188,6 +259,7 @@ def parse_money(s: str) -> float:
     except ValueError:
         return 0.0
 
+
 def rph_color(rph: float) -> str:
     if rph >= RPH_TARGET:
         scale = min((rph - RPH_TARGET) / (RPH_MAX_GREEN - RPH_TARGET), 1.0)
@@ -196,6 +268,7 @@ def rph_color(rph: float) -> str:
     scale = min((RPH_TARGET - rph) / RPH_TARGET, 1.0)
     r = int(150 + 105 * scale)
     return f"rgb({r},0,0)"
+
 
 def shift_up(start_idx: int):
     ss = st.session_state
@@ -209,9 +282,11 @@ def shift_up(start_idx: int):
     ss[f"desc_{last}"] = ""
     ss[f"tag_{last}"] = DEFAULT_TAG
 
+
 def add_item():
     if st.session_state.item_count < MAX_ITEMS:
         st.session_state.item_count += 1
+
 
 def remove_item(i: int):
     ss = st.session_state
@@ -220,6 +295,7 @@ def remove_item(i: int):
     shift_up(i)
     ss.item_count -= 1
 
+
 def clear_items():
     ss = st.session_state
     for i in range(1, MAX_ITEMS + 1):
@@ -227,6 +303,7 @@ def clear_items():
         ss[f"desc_{i}"] = ""
         ss[f"tag_{i}"] = DEFAULT_TAG
     ss.item_count = 1
+
 
 def add_sale():
     ss = st.session_state
@@ -240,16 +317,17 @@ def add_sale():
                 "revenue": revenue,
                 "desc": (ss.get(f"desc_{i}", "") or "").strip(),
                 "tag": ss.get(f"tag_{i}", DEFAULT_TAG),
-                "ts": datetime.now(ET).strftime("%H:%M:%S"),
+                "ts": now_et().strftime("%H:%M:%S"),
             }
         )
         added += 1
 
-    # Persist immediately (this is the key)
+    # Persist immediately
     save_sales(ss.current_date, ss.sales)
 
     clear_items()
     ss._last_added = added
+
 
 def delete_sale(idx: int):
     ss = st.session_state
@@ -257,11 +335,109 @@ def delete_sale(idx: int):
         ss.sales.pop(idx)
         save_sales(ss.current_date, ss.sales)
 
+
+# -----------------------------
+# Schedule -> hours worked so far today
+# -----------------------------
+def parse_hhmm(hhmm: str) -> tuple[int, int]:
+    hhmm = (hhmm or "").strip()
+    h, m = hhmm.split(":")
+    return int(h), int(m)
+
+
+def weekday_key(d: date) -> str:
+    return d.strftime("%a")  # Mon, Tue, ...
+
+
+def scheduled_hours_so_far(schedule: dict, now: datetime) -> float:
+    weekly = (schedule or {}).get("weekly", {}) or {}
+    day = weekday_key(now.date())
+    shifts = weekly.get(day, []) or []
+
+    total_seconds = 0.0
+    for sh in shifts:
+        try:
+            sh_start_h, sh_start_m = parse_hhmm(sh.get("start"))
+            sh_end_h, sh_end_m = parse_hhmm(sh.get("end"))
+        except Exception:
+            continue
+
+        start_dt = now.replace(hour=sh_start_h, minute=sh_start_m, second=0, microsecond=0)
+        end_dt = now.replace(hour=sh_end_h, minute=sh_end_m, second=0, microsecond=0)
+
+        # Overnight shift support (end <= start means next day)
+        if end_dt <= start_dt:
+            end_dt = end_dt.replace(day=end_dt.day + 1)
+
+        # Not started yet
+        if now <= start_dt:
+            continue
+
+        worked_until = min(now, end_dt)
+        total_seconds += max((worked_until - start_dt).total_seconds(), 0.0)
+
+    return total_seconds / 3600.0
+
+
 # -----------------------------
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
-st.caption(f"Date (ET): **{st.session_state.current_date}**")
+
+st.caption(
+    f"Date (ET): **{st.session_state.current_date}**  |  "
+    f"Last refresh: **{st.session_state['last_refresh_et'].strftime('%I:%M:%S %p ET')}**"
+)
+
+# Schedule popover (📅)
+schedule = load_schedule()
+with st.popover("📅 Schedule"):
+    st.write(
+        "Upload a **schedule.json** (weekly template). It will persist until you replace or clear it.\n\n"
+        "Format example:\n"
+        "- weekly -> Mon..Sun -> list of shifts\n"
+        "- shift: {\"start\":\"HH:MM\",\"end\":\"HH:MM\"}"
+    )
+
+    up = st.file_uploader("Upload schedule.json", type=["json"], key="schedule_uploader")
+    if up is not None:
+        try:
+            new_schedule = json.loads(up.read().decode("utf-8"))
+            # Light validation/coercion
+            if not isinstance(new_schedule, dict):
+                raise ValueError("Top-level JSON must be an object/dict.")
+            if "weekly" not in new_schedule or not isinstance(new_schedule["weekly"], dict):
+                raise ValueError("Missing or invalid 'weekly' object.")
+            # Ensure weekdays exist
+            for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+                new_schedule["weekly"].setdefault(d, [])
+                if not isinstance(new_schedule["weekly"][d], list):
+                    new_schedule["weekly"][d] = []
+            new_schedule.setdefault("version", 1)
+            new_schedule.setdefault("timezone", "America/New_York")
+
+            save_schedule(new_schedule)
+            schedule = new_schedule
+            st.success("Schedule saved ✅")
+        except Exception as e:
+            st.error(f"Invalid schedule JSON: {e}")
+
+    if st.button("Clear saved schedule", type="secondary"):
+        save_schedule(default_schedule())
+        schedule = load_schedule()
+        st.success("Schedule cleared.")
+
+    # Quick preview
+    weekly = schedule.get("weekly", {})
+    today_key = weekday_key(now_et().date())
+    st.write(f"**Today ({today_key}) shifts:**")
+    today_shifts = weekly.get(today_key, [])
+    if today_shifts:
+        for sh in today_shifts:
+            st.write(f"- {sh.get('start','??:??')} → {sh.get('end','??:??')}")
+    else:
+        st.caption("No shifts for today.")
+
 
 st.header("Add Sale")
 
@@ -307,16 +483,36 @@ with c_add:
 st.button("Add Sale", type="primary", on_click=add_sale)
 
 # -----------------------------
-# Metrics
+# Metrics (auto hours from schedule)
 # -----------------------------
 st.header("Today's Performance")
-hours_worked = st.number_input("Hours Worked Today", min_value=1.0, max_value=16.0, value=8.0, step=0.5)
 
 total_revenue = sum(s["revenue"] for s in st.session_state.sales)
 category_revenue = sum(s["revenue"] for s in st.session_state.sales if s.get("tag") in ("Health/Wearables", "CarFi"))
 other_revenue = total_revenue - category_revenue
 
-rph = total_revenue / hours_worked if hours_worked else 0.0
+now = now_et()
+auto_hours = max(scheduled_hours_so_far(schedule, now), 0.0)
+
+st.session_state.setdefault("use_manual_hours", False)
+use_manual = st.toggle("Manually override hours worked", value=st.session_state.use_manual_hours)
+st.session_state.use_manual_hours = use_manual
+
+if use_manual:
+    st.session_state.setdefault("manual_hours_worked", float(max(auto_hours, 1.0)))
+    hours_worked = st.number_input(
+        "Hours Worked Today",
+        min_value=0.0,
+        max_value=24.0,
+        value=float(st.session_state.manual_hours_worked),
+        step=0.25,
+    )
+    st.session_state.manual_hours_worked = float(hours_worked)
+else:
+    hours_worked = auto_hours
+    st.caption(f"Auto hours (from schedule + current time): **{hours_worked:.2f} hrs**")
+
+rph = (total_revenue / hours_worked) if hours_worked and hours_worked > 0 else 0.0
 revmix = (category_revenue / total_revenue) if total_revenue > 0 else 0.0
 
 st.markdown(
@@ -333,6 +529,8 @@ st.markdown(
              <div style="color:{TEXT}; font-size:22px; font-weight:800;">${category_revenue:,.2f}</div></div>
         <div><div style="color:{MUTED2}; font-size:12px;">Revmix</div>
              <div style="color:{TEXT}; font-size:22px; font-weight:800;">{revmix*100:.2f}%</div></div>
+        <div><div style="color:{MUTED2}; font-size:12px;">Hours Worked</div>
+             <div style="color:{TEXT}; font-size:22px; font-weight:800;">{hours_worked:.2f}</div></div>
       </div>
     </div>
     """,
@@ -373,6 +571,7 @@ st.subheader("What Do I Need to Hit Target?")
 if total_revenue <= 0:
     st.info("No sales recorded today.")
 else:
+    # RPH target based on computed hours_worked (auto or manual)
     required_total = RPH_TARGET * hours_worked
     additional_needed = max(required_total - total_revenue, 0)
 
