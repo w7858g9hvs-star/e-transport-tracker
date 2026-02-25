@@ -395,22 +395,28 @@ def editor_to_schedule(schedule: dict) -> dict:
 # -----------------------------
 st.title("E-Transport Sales Tracker")
 
-# Caption + Refresh button (↻) next to it
-cap_l, cap_r = st.columns([0.88, 0.12], vertical_alignment="center")
-with cap_l:
+# Top row: caption + schedule icon + refresh icon (right next to schedule)
+top_l, top_r1, top_r2 = st.columns([0.75, 0.13, 0.12], vertical_alignment="center")
+
+with top_l:
     st.caption(
         f"Date (ET): **{st.session_state.current_date}**  |  "
         f"Last refresh: **{st.session_state['last_refresh_et'].strftime('%I:%M:%S %p ET')}**"
     )
-with cap_r:
-    if st.button("↻", type="secondary", help="Refresh time + recalc auto RPH", key="refresh_btn"):
-        st.rerun()
 
 # Load schedule ONCE (doesn't affect sales)
 schedule = load_schedule()
 ensure_schedule_editor_state(schedule)
 
-with st.popover("📅 Schedule"):
+with top_r1:
+    schedule_pop = st.popover("📅", help="Edit weekly schedule")
+
+with top_r2:
+    if st.button("↻", type="secondary", help="Refresh time + recalc auto RPH", key="refresh_btn"):
+        st.rerun()
+
+# ---- Schedule Popover Content ----
+with schedule_pop:
     st.write("Set your weekly work shifts here. This saves locally and stays until you change it.")
 
     tab = st.tabs(WEEKDAYS)
@@ -441,7 +447,6 @@ with st.popover("📅 Schedule"):
                         st.time_input("End", key=f"sched_{d}_end_{i}", label_visibility="collapsed")
                     with r3:
                         if st.button("✕", key=f"rm_shift_{d}_{i}", type="secondary"):
-                            # remove by shifting later shifts up
                             for j in range(i, count - 1):
                                 st.session_state[f"sched_{d}_start_{j}"] = st.session_state.get(
                                     f"sched_{d}_start_{j+1}", time(9, 0)
@@ -544,7 +549,6 @@ category_revenue = sum(
 other_revenue = total_revenue - category_revenue
 
 now = now_et()
-# IMPORTANT: use the *saved* schedule (not unsaved editor changes)
 saved_schedule = load_schedule()
 auto_hours = max(scheduled_hours_so_far(saved_schedule, now), 0.0)
 
