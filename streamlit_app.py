@@ -399,10 +399,19 @@ def editor_to_schedule(schedule: dict) -> dict:
 # UI
 # -----------------------------
 st.title("E-Transport Sales Tracker")
-st.caption(
-    f"Date (ET): **{st.session_state.current_date}**  |  "
-    f"Last refresh: **{st.session_state['last_refresh_et'].strftime('%I:%M:%S %p ET')}**"
-)
+
+cap_l, cap_r = st.columns([0.88, 0.12], vertical_alignment="center")
+
+with cap_l:
+    st.caption(
+        f"Date (ET): **{st.session_state.current_date}**  |  "
+        f"Last refresh: **{st.session_state['last_refresh_et'].strftime('%I:%M:%S %p ET')}**"
+    )
+
+with cap_r:
+    # Tiny refresh button that forces a rerun; last_refresh_et updates at top-of-script each run
+    if st.button("↻", type="secondary", help="Refresh time + recalc auto RPH", key="refresh_btn"):
+        st.rerun()
 
 # Load schedule ONCE (doesn't affect sales)
 schedule = load_schedule()
