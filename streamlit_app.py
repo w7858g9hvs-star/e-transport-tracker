@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo  # Python 3.9+
 RPH_TARGET = 300
 RPH_MAX_GREEN = 600
 REVMIX_TARGET = 0.60
+CATMIX_SAFE_TARGET = 0.65  # NEW: 65% category mix floor for "Other headroom"
 MAX_ITEMS = 10
 
 TAGS = ["Health/Wearables", "CarFi", "Other"]
@@ -309,6 +310,28 @@ def delete_sale(idx: int):
     if 0 <= idx < len(ss.sales):
         ss.sales.pop(idx)
         save_sales(ss.current_date, ss.sales)
+
+# -----------------------------
+# NEW: Other headroom tracker
+# -----------------------------
+def other_headroom_to_hold_mix(category_rev: float, total_rev: float, target_mix: float) -> float:
+    """
+    If you ONLY add 'Other' revenue, how much can you add before
+    category mix falls to target_mix?
+
+    Returns dollars of 'Other' headroom (>= 0).
+    If currently below target mix, returns 0 because adding Other can't fix mix.
+    """
+    if total_rev <= 0 or target_mix <= 0 or target_mix >= 1:
+        return 0.0
+
+    current_mix = category_rev / total_rev
+    if current_mix <= target_mix:
+        return 0.0
+
+    # Solve: category_rev / (total_rev + x) = target_mix  => x = (category_rev/target_mix) - total_rev
+    x = (category_rev / target_mix) - total_rev
+    return max(x, 0.0)
 
 # -----------------------------
 # Schedule -> hours worked so far today
@@ -644,6 +667,30 @@ else:
         st.write(f"You need **${category_shortfall:,.2f} more in Category sales** to reach 60% revmix.")
     else:
         st.success("Revmix Target Hit ✅")
+
+    # -----------------------------
+    # NEW: Other revenue headroom to hold 65% category mix
+    # -----------------------------
+    st.divider()
+    st.subheader("Other Headroom (to Hold 65% Catmix)")
+
+    current_catmix = (category_revenue / total_revenue) if total_revenue > 0 else 0.0
+    other_headroom_65 = other_headroom_to_hold_mix(
+        category_rev=category_revenue,
+        total_rev=total_revenue,
+        target_mix=CATMIX_SAFE_TARGET,
+    )
+
+    if current_catmix <= CATMIX_SAFE_TARGET:
+        st.warning(
+            f"You're at **{current_catmix*100:.2f}%** catmix (≤ 65%). "
+            "Selling more **Other** will not raise catmix—sell more **Category** to recover."
+        )
+    else:
+        st.success(
+            f"You can sell **${other_headroom_65:,.2f}** more in **Other** "
+            f"and still stay at **≥ 65%** catmix."
+        )
 
 # -----------------------------
 # Sales History
